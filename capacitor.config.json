@@ -1,0 +1,13 @@
+{
+  "appId": "com.barberflow.app",
+  "appName": "BarberFlow",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "backgroundColor": "#121212",
+    "allowMixedContent": true
+  }
+}

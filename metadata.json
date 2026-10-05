@@ -1,0 +1,8 @@
+{
+  "name": "Remix Barberflow",
+  "description": "Sistema de gestão e agenda para barbearias, com controlo de agenda, marcações, serviços e barbeiros.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

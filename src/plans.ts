@@ -1,0 +1,91 @@
+import { SubscriptionPlan } from './types';
+
+export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
+  {
+    id: 'free',
+    name: 'Plano Grátis',
+    price: 0,
+    period: 'mês',
+    description: 'Funcionalidades essenciais para começar a organizar a barbearia sem custos.',
+    badge: 'Básico',
+    features: [
+      '1 Barbeiro incluído',
+      'Agenda e calendário manual de marcações',
+      'Catálogo de serviços e preçário',
+      'Página web pública de agendamentos',
+      'Sem Agente IA no WhatsApp',
+      'Suporte comunitário',
+    ],
+    limits: {
+      maxBarbers: 1,
+      hasWhatsAppAgent: false,
+      hasAutoReminders: false,
+      hasAdvancedReports: false,
+      hasPrioritySupport: false,
+      hasCustomLogo: false,
+      hasDepositAntiNoShow: false,
+    },
+  },
+  {
+    id: 'intermediate',
+    name: 'Plano Intermédio',
+    price: 12,
+    period: 'mês',
+    description: 'O plano ideal para barbearias em crescimento com atendimento por IA.',
+    badge: 'Mais Popular',
+    features: [
+      'Até 3 Barbeiros na equipa',
+      'Agente de IA no WhatsApp ativo',
+      'Sinal de 50% anti-falta na marcação (MB WAY e Cartão)',
+      'Proteção contra faltas: 50% retido para o barbeiro em no-show',
+      'Até 150 agendamentos automáticos por IA / mês',
+      'Lembretes automáticos por WhatsApp (24h antes)',
+      'Registo e histórico de clientes (CRM)',
+      'Relatórios básicos de faturação',
+      'Suporte prioritário por email',
+    ],
+    limits: {
+      maxBarbers: 3,
+      hasWhatsAppAgent: true,
+      hasAutoReminders: true,
+      hasAdvancedReports: false,
+      hasPrioritySupport: false,
+      hasCustomLogo: false,
+      hasDepositAntiNoShow: true,
+    },
+  },
+  {
+    id: 'pro',
+    name: 'Plano Profissional',
+    price: 20,
+    period: 'mês',
+    description: 'Todas as funcionalidades liberadas sem limites para maximizar o seu lucro.',
+    badge: 'Completo',
+    features: [
+      'Logótipo e branding exclusivo da sua barbearia',
+      'Barbeiros ilimitados na equipa',
+      'Sinal e caução anti-falta flexível (MB WAY e Cartão)',
+      'Retenção de 50% em no-show e cancelamentos tardios',
+      'Agente de IA no WhatsApp Ilimitado 24/7',
+      'Agendamentos, reagendamentos e cancelamentos ilimitados',
+      'Confirmação automática anti-no-show e recuperação de faltas',
+      'Personalização total das regras da barbearia e tom da IA',
+      'Relatório financeiro detalhado e cálculo de comissões',
+      'Simulador WhatsApp e Webhook dedicado',
+      'Suporte prioritário 24/7 direto por WhatsApp',
+    ],
+    limits: {
+      maxBarbers: 999,
+      hasWhatsAppAgent: true,
+      hasAutoReminders: true,
+      hasAdvancedReports: true,
+      hasPrioritySupport: true,
+      hasCustomLogo: true,
+      hasDepositAntiNoShow: true,
+    },
+  },
+];
+
+export function getPlanById(planId?: string): SubscriptionPlan {
+  return SUBSCRIPTION_PLANS.find((p) => p.id === planId) || SUBSCRIPTION_PLANS[1]; // default intermediate
+}

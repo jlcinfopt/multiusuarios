@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1c1c1c"/>
+      <stop offset="50%" stop-color="#121212"/>
+      <stop offset="100%" stop-color="#0a0a0a"/>
+    </linearGradient>
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fef08a"/>
+      <stop offset="45%" stop-color="#c9a227"/>
+      <stop offset="85%" stop-color="#9a7818"/>
+      <stop offset="100%" stop-color="#6e540d"/>
+    </linearGradient>
+    <filter id="goldGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="6" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Background Base -->
+  <rect width="512" height="512" rx="108" fill="url(#bgGrad)"/>
+  <rect width="496" height="496" x="8" y="8" rx="100" fill="none" stroke="url(#goldGrad)" stroke-width="4" stroke-opacity="0.35"/>
+
+  <!-- Subtle Vintage Barber Border -->
+  <circle cx="256" cy="256" r="190" fill="none" stroke="url(#goldGrad)" stroke-width="3" stroke-dasharray="8 6" stroke-opacity="0.45"/>
+  <circle cx="256" cy="256" r="176" fill="none" stroke="url(#goldGrad)" stroke-width="1.5" stroke-opacity="0.3"/>
+
+  <!-- Central Crest with Scissors & Crown -->
+  <g transform="translate(256, 256)" filter="url(#goldGlow)">
+    <!-- Small Crown on top -->
+    <path d="M -38 -95 L -20 -70 L 0 -92 L 20 -70 L 38 -95 L 30 -58 L -30 -58 Z" fill="url(#goldGrad)"/>
+    <circle cx="-38" cy="-97" r="4" fill="#fef08a"/>
+    <circle cx="0" cy="-94" r="5" fill="#fef08a"/>
+    <circle cx="38" cy="-97" r="4" fill="#fef08a"/>
+
+    <!-- Left Scissor Blade -->
+    <path d="M 0 -45 L -75 60 C -82 72 -75 88 -60 88 C -46 88 -38 76 -46 64 L -15 18 L 0 -5 Z" fill="url(#goldGrad)"/>
+    <!-- Left Scissor Loop -->
+    <circle cx="-60" cy="74" r="26" fill="none" stroke="url(#goldGrad)" stroke-width="9"/>
+    <circle cx="-60" cy="74" r="15" fill="#121212"/>
+
+    <!-- Right Scissor Blade -->
+    <path d="M 0 -45 L 75 60 C 82 72 75 88 60 88 C 46 88 38 76 46 64 L 15 18 L 0 -5 Z" fill="url(#goldGrad)"/>
+    <!-- Right Scissor Loop -->
+    <circle cx="60" cy="74" r="26" fill="none" stroke="url(#goldGrad)" stroke-width="9"/>
+    <circle cx="60" cy="74" r="15" fill="#121212"/>
+
+    <!-- Center Pivot Pin -->
+    <circle cx="0" cy="6" r="8" fill="#fef08a"/>
+    <circle cx="0" cy="6" r="4" fill="#121212"/>
+
+    <!-- Est. Star Accents -->
+    <path d="M -90 -10 L -86 -2 L -78 -2 L -84 3 L -82 11 L -90 6 L -98 11 L -96 3 L -102 -2 L -94 -2 Z" fill="url(#goldGrad)"/>
+    <path d="M 90 -10 L 94 -2 L 102 -2 L 96 3 L 98 11 L 90 6 L 82 11 L 84 3 L 78 -2 L 86 -2 Z" fill="url(#goldGrad)"/>
+  </g>
+
+  <!-- Brand Typography -->
+  <text x="256" y="405" font-family="'Montserrat', sans-serif" font-weight="800" font-size="28" fill="url(#goldGrad)" text-anchor="middle" letter-spacing="7">BARBERFLOW</text>
+  <text x="256" y="428" font-family="'Montserrat', sans-serif" font-weight="600" font-size="12" fill="#e5b83b" text-anchor="middle" letter-spacing="4">BARBEARIA &amp; ESTÉTICA</text>
+</svg>
