@@ -420,7 +420,7 @@ export const OwnerDashboardView: React.FC<OwnerDashboardViewProps> = ({
                         </span>
                       )}
                       <span className="px-2 py-0.5 rounded-full bg-[#c9a227]/15 border border-[#c9a227]/30 text-[#fef08a] text-[10px] font-bold uppercase tracking-wider">
-                        Plano {biz.plan} ({biz.mrr}€/mês)
+                        {biz.plan === 'pro' ? 'Plano Profissional' : biz.plan === 'free' ? 'Plano Grátis' : 'Plano Intermédio'} ({biz.mrr}€/mês)
                       </span>
                     </div>
 

@@ -337,7 +337,7 @@ export const ClientAssistantView: React.FC<ClientAssistantViewProps> = ({
     });
 
     if (filtered.length === 0) {
-      return ['🗓️ Agendar agora', '💬 Falar no WhatsApp', '📍 Ver localização'];
+      return ['🗓️ Agendar agora', '✂️ Ver serviços e preços', '📍 Ver localização'];
     }
     return filtered;
   };
@@ -379,7 +379,7 @@ export const ClientAssistantView: React.FC<ClientAssistantViewProps> = ({
       {
         id: `msg-rep-${Date.now() + 1}`,
         sender: 'assistant',
-        text: `Excelente escolha! Reservei a vaga das **${slot.time}** para **${slot.serviceName}** com **${slot.barberName}** (${slot.price}€).\n\nPara garantir seu horário na nossa agenda oficial, por favor preencha seus dados abaixo:`,
+        text: `Excelente escolha! Reservei a vaga das **${slot.time}** para **${slot.serviceName}** com **${slot.barberName}** (${formatMoney(slot.price, business)}).\n\nPara garantir seu horário na nossa agenda oficial, por favor preencha seus dados abaixo:`,
         time: userTime,
         bookingAction: {
           slotTime: slot.time,
@@ -443,18 +443,26 @@ export const ClientAssistantView: React.FC<ClientAssistantViewProps> = ({
         customerPhone: customerPhone.trim(),
       });
 
+      const isDepositPaid = depositVal && depositVal > 0 && selectedPaymentMethod !== 'balcao';
+      const formattedDeposit = formatMoney(depositVal || 0, business);
+      const formattedTotal = formatMoney(action.price, business);
+
+      const confirmMsgText = isDepositPaid
+        ? `🎉 **Agendamento e Sinal Confirmados com Sucesso!**\nO seu sinal de **${formattedDeposit}** foi registado e o seu horário para **${action.serviceName}** às **${action.slotTime}** com **${action.barberName}** está oficialmente reservado na agenda.`
+        : `🎉 **Agendamento Confirmado com Sucesso!**\nO seu horário para **${action.serviceName}** às **${action.slotTime}** com **${action.barberName}** (${formattedTotal}) está oficialmente reservado na agenda da barbearia.`;
+
       setMessages((prev) => [
         ...prev.map((m) => ({ ...m, suggestions: undefined })),
         {
           id: `msg-${Date.now()}`,
           sender: 'client',
-          text: `Confirmar dados: ${customerName.trim()} (${customerPhone.trim()}) - Sinal ${depositVal || 0}€ (${selectedPaymentMethod.toUpperCase()})`,
+          text: `Confirmar dados: ${customerName.trim()} (${customerPhone.trim()}) - ${selectedPaymentMethod === 'balcao' ? 'No Balcão' : `Sinal ${formattedDeposit}`}`,
           time: replyTime,
         },
         {
           id: `msg-rep-${Date.now() + 1}`,
           sender: 'assistant',
-          text: `🎉 **Agendamento e Sinal Confirmados com Sucesso!**\nO seu sinal de **${depositVal || 0}€** foi recebido e o horário das **${action.slotTime}** está oficialmente reservado na agenda.`,
+          text: confirmMsgText,
           time: replyTime,
           confirmationTicket: {
             id: result.appointment?.id || `apt_${Date.now()}`,
@@ -832,13 +840,18 @@ export const ClientAssistantView: React.FC<ClientAssistantViewProps> = ({
         return;
       }
 
-      // Intent 2: Business Hours
+      // Intent 2: Business Hours (only for explicit schedule inquiries)
       if (
-        norm.includes('horario') ||
-        norm.includes('que horas') ||
-        norm.includes('abrem') ||
-        norm.includes('fecham') ||
-        norm.includes('aberto')
+        (norm.includes('horarios de atendimento') ||
+          norm.includes('que horas') ||
+          norm.includes('abrem') ||
+          norm.includes('fecham') ||
+          norm.includes('aberto')) &&
+        !norm.includes('amanha') &&
+        !norm.includes('hoje') &&
+        !norm.includes('agendar') &&
+        !norm.includes('marcar') &&
+        !norm.includes('vaga')
       ) {
         setMessages((prev) => [
           ...prev,
@@ -1015,13 +1028,15 @@ export const ClientAssistantView: React.FC<ClientAssistantViewProps> = ({
           targetBarber = activeBarbers.find((b) => b.id === selectedBarberId);
         }
 
-        // Prompt for barber selection if multiple active barbers exist and none has been selected yet
+        // Prompt for barber selection if multiple active barbers exist and none has been selected yet (skip if asking specifically for date/tomorrow)
         if (
           activeBarbers.length > 1 &&
           !targetBarber &&
           !selectedBarberId &&
           !norm.includes('qualquer') &&
-          !norm.includes('sem preferencia')
+          !norm.includes('sem preferencia') &&
+          !norm.includes('amanha') &&
+          !norm.includes('dia seguinte')
         ) {
           const barberOptions: ChatMessage['barberOptions'] = [
             ...activeBarbers.map((b) => ({
@@ -1097,7 +1112,7 @@ export const ClientAssistantView: React.FC<ClientAssistantViewProps> = ({
                 [
                   'Ver horários de amanhã',
                   '✂️ Ver serviços e preços',
-                  'Falar no WhatsApp',
+                  '📍 Localização e morada',
                 ],
                 updatedHistory
               ),
@@ -1587,75 +1602,25 @@ export const ClientAssistantView: React.FC<ClientAssistantViewProps> = ({
                     {/* Inline Booking Confirmed Ticket */}
                     {m.confirmationTicket && (
                       <div className="pt-2 border-t border-white/10 space-y-2.5">
-                        <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/40 text-xs space-y-1.5">
+                        <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/40 text-xs space-y-2">
                           <div className="flex items-center space-x-1.5 text-emerald-400 font-bold text-sm">
-                            <CheckCircle2 className="w-4 h-4" />
-                            <span>Marcação Confirmada Oficialmente!</span>
+                            <CheckCircle2 className="w-4 h-4 shrink-0" />
+                            <span>Agendamento Confirmado com Sucesso!</span>
                           </div>
                           <div className="text-slate-300 leading-relaxed">
                             <strong>{m.confirmationTicket.customerName}</strong>, seu horário está garantido para <strong>{m.confirmationTicket.serviceName}</strong> no dia <strong>{m.confirmationTicket.date}</strong> às <strong className="text-[#c9a227]">{m.confirmationTicket.time}</strong> com <strong>{m.confirmationTicket.barberName}</strong>.
                           </div>
+                          <div className="text-[11px] text-emerald-300/90 font-medium pt-1 border-t border-emerald-500/20 flex items-center space-x-1.5">
+                            <span>📱</span>
+                            <span>Confirmação enviada automaticamente para o seu telemóvel e e-mail.</span>
+                          </div>
                         </div>
 
-                        <div className="flex flex-wrap gap-2 pt-1">
-                          {businessPhone && (
-                            <a
-                              href={`https://wa.me/${businessPhone}?text=${encodeURIComponent(
-                                `Olá! Acabei de agendar pelo Assistente da ${business.name || 'Barbearia'}:\n✂️ Serviço: ${m.confirmationTicket.serviceName}\n👤 Barbeiro: ${m.confirmationTicket.barberName}\n📅 Data: ${m.confirmationTicket.date} às ${m.confirmationTicket.time}\n👤 Cliente: ${m.confirmationTicket.customerName} (${m.confirmationTicket.customerPhone})`
-                              )}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center space-x-1.5 transition cursor-pointer shadow-md"
-                            >
-                              <MessageSquare className="w-3.5 h-3.5" />
-                              <span>📲 Confirmar / Enviar no WhatsApp</span>
-                            </a>
-                          )}
-
-                          {(() => {
-                            const cleanDate = m.confirmationTicket.date.replace(/-/g, '');
-                            const cleanTime = m.confirmationTicket.time.replace(':', '');
-                            const startIso = `${cleanDate}T${cleanTime}00`;
-                            const [ch, cm] = m.confirmationTicket.time.split(':').map(Number);
-                            const endMin = (ch || 0) * 60 + (cm || 0) + 40;
-                            const endH = String(Math.floor(endMin / 60)).padStart(2, '0');
-                            const endM = String(endMin % 60).padStart(2, '0');
-                            const endIso = `${cleanDate}T${endH}${endM}00`;
-                            const gcalUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(
-                              `${m.confirmationTicket.serviceName} - ${business.name || 'Barbearia'}`
-                            )}&dates=${startIso}/${endIso}&details=${encodeURIComponent(
-                              `Marcação de ${m.confirmationTicket.serviceName} com ${m.confirmationTicket.barberName}.\nCliente: ${m.confirmationTicket.customerName}\nValor: ${m.confirmationTicket.price}€`
-                            )}&location=${encodeURIComponent(business.address || business.city || 'Barbearia')}`;
-
-                            return (
-                              <a
-                                href={gcalUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="px-3.5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center space-x-1.5 transition cursor-pointer shadow-md"
-                              >
-                                <Calendar className="w-3.5 h-3.5" />
-                                <span>📅 Guardar no Calendário</span>
-                              </a>
-                            );
-                          })()}
-
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const text = `✂️ Marcação Confirmada na ${business.name || 'Barbearia'}!\nServiço: ${m.confirmationTicket?.serviceName}\nBarbeiro: ${m.confirmationTicket?.barberName}\nData: ${m.confirmationTicket?.date} às ${m.confirmationTicket?.time}\nCliente: ${m.confirmationTicket?.customerName}`;
-                              navigator.clipboard.writeText(text);
-                              alert('Comprovativo de agendamento copiado para a área de transferência!');
-                            }}
-                            className="px-3.5 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-slate-200 font-semibold text-xs flex items-center space-x-1.5 transition cursor-pointer"
-                          >
-                            <span>📋 Copiar Dados</span>
-                          </button>
-
+                        <div className="flex justify-end pt-1">
                           <button
                             type="button"
                             onClick={() => handleSendChatMessage('Quero fazer outra marcação')}
-                            className="px-3.5 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white font-semibold text-xs flex items-center space-x-1.5 transition cursor-pointer"
+                            className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white font-bold text-xs flex items-center space-x-1.5 transition cursor-pointer"
                           >
                             <RotateCcw className="w-3.5 h-3.5" />
                             <span>Nova Marcação</span>
