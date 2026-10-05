@@ -115,6 +115,7 @@ export interface Business {
   timezone: string;
   createdAt: string;
   plan?: SubscriptionPlanId;
+  active?: boolean;
   slogan?: string;
   logoUrl?: string;
   // Multi-country support: Portugal (PT / EUR) or Brasil (BR / BRL)

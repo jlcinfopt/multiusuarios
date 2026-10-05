@@ -50,7 +50,7 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
       hasAutoReminders: true,
       hasAdvancedReports: false,
       hasPrioritySupport: false,
-      hasCustomLogo: false,
+      hasCustomLogo: true,
       hasDepositAntiNoShow: true,
     },
   },

@@ -513,12 +513,23 @@ async function startServer() {
   });
 
   app.delete('/api/owner/businesses/:id', (req, res) => {
-    const biz = db.businesses.get(req.params.id);
+    const bizId = req.params.id;
+    const biz = db.businesses.get(bizId);
     if (!biz) return res.status(404).json({ error: 'Barbearia não encontrada.' });
-    if (biz.id === 'biz_dom_barbeiro') {
-      return res.status(400).json({ error: 'Não é possível eliminar a barbearia principal do sistema.' });
+    
+    db.businesses.delete(bizId);
+    
+    // Clean up associated services, barbers, and appointments
+    for (const [srvId, srv] of db.services.entries()) {
+      if (srv.businessId === bizId) db.services.delete(srvId);
     }
-    db.businesses.delete(req.params.id);
+    for (const [brbId, brb] of db.barbers.entries()) {
+      if (brb.businessId === bizId) db.barbers.delete(brbId);
+    }
+    for (const [aptId, apt] of db.appointments.entries()) {
+      if (apt.businessId === bizId) db.appointments.delete(aptId);
+    }
+
     res.json({ success: true, message: 'Barbearia eliminada com sucesso.' });
   });
 

@@ -16,10 +16,36 @@ import {
 } from './types';
 
 // Local storage persistence helpers for static platforms (e.g. Vercel static build without running server)
+function getDeletedBusinessIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem('barberflow_deleted_businesses');
+    return new Set(raw ? JSON.parse(raw) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function markBusinessDeleted(id: string) {
+  try {
+    const deleted = getDeletedBusinessIds();
+    deleted.add(id);
+    localStorage.setItem('barberflow_deleted_businesses', JSON.stringify(Array.from(deleted)));
+    const list = getLocalBusinesses().filter((b) => b.id !== id);
+    localStorage.setItem('barberflow_businesses', JSON.stringify(list));
+    localStorage.removeItem(`barberflow_services_${id}`);
+    localStorage.removeItem(`barberflow_barbers_${id}`);
+    localStorage.removeItem(`barberflow_appointments_${id}`);
+  } catch (err) {
+    console.error('LocalStorage delete error:', err);
+  }
+}
+
 function getLocalBusinesses(): Business[] {
   try {
     const raw = localStorage.getItem('barberflow_businesses');
-    return raw ? JSON.parse(raw) : [];
+    const list: Business[] = raw ? JSON.parse(raw) : [];
+    const deletedIds = getDeletedBusinessIds();
+    return list.filter((b) => !deletedIds.has(b.id));
   } catch {
     return [];
   }
@@ -27,6 +53,11 @@ function getLocalBusinesses(): Business[] {
 
 function saveLocalBusiness(biz: Business) {
   try {
+    const deletedIds = getDeletedBusinessIds();
+    if (deletedIds.has(biz.id)) {
+      deletedIds.delete(biz.id);
+      localStorage.setItem('barberflow_deleted_businesses', JSON.stringify(Array.from(deletedIds)));
+    }
     const list = getLocalBusinesses().filter((b) => b.id !== biz.id);
     list.unshift(biz);
     localStorage.setItem('barberflow_businesses', JSON.stringify(list));
@@ -113,6 +144,7 @@ const DEFAULT_DOM_BARBEIRO: Business = {
 export const api = {
   // Business
   async getBusiness(businessId = 'biz_dom_barbeiro', slug?: string): Promise<Business> {
+    const deletedIds = getDeletedBusinessIds();
     try {
       const url = slug
         ? `/api/business?slug=${encodeURIComponent(slug)}`
@@ -120,25 +152,39 @@ export const api = {
       const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
-        if (data && data.id) {
-          saveLocalBusiness(data);
-          return data;
+        if (data && data.id && !deletedIds.has(data.id)) {
+          // Merge with any local modifications (like logo or payment policy)
+          const localList = getLocalBusinesses();
+          const localMatch = localList.find((b) => b.id === data.id);
+          const merged = localMatch ? { ...data, ...localMatch } : data;
+          saveLocalBusiness(merged);
+          return merged;
         }
       }
     } catch {
-      // Server not reachable or static host fallback
+      // Server not reachable or static host fallback (e.g. Vercel)
     }
 
     const localList = getLocalBusinesses();
     if (slug) {
-      const found = localList.find((b) => b.slug?.toLowerCase() === slug.toLowerCase());
+      const found = localList.find((b) => b.slug?.toLowerCase() === slug.toLowerCase() && !deletedIds.has(b.id));
       if (found) return found;
     }
-    const foundById = localList.find((b) => b.id === businessId);
+    const foundById = localList.find((b) => b.id === businessId && !deletedIds.has(b.id));
     if (foundById) return foundById;
     if (localList.length > 0) return localList[0];
 
-    return DEFAULT_DOM_BARBEIRO;
+    if (!deletedIds.has('biz_dom_barbeiro')) {
+      return DEFAULT_DOM_BARBEIRO;
+    }
+
+    // If default was deleted, fallback to dummy active business
+    return {
+      ...DEFAULT_DOM_BARBEIRO,
+      id: 'biz_default',
+      name: 'Minha Barbearia',
+      slug: 'minha-barbearia',
+    };
   },
 
   async registerNewBusiness(data: {
@@ -271,16 +317,40 @@ export const api = {
   },
 
   async updateBusiness(business: Partial<Business>): Promise<Business> {
-    const res = await fetch('/api/business', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(business),
-    });
-    if (!res.ok) {
-      const errorMsg = await res.text();
-      throw new Error(errorMsg || 'Erro ao atualizar dados da barbearia.');
+    const businessId = business.id || localStorage.getItem('barberflow_active_biz') || 'biz_dom_barbeiro';
+    let updatedBusiness: Business | null = null;
+
+    try {
+      const res = await fetch('/api/business', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...business, id: businessId }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.id) {
+          updatedBusiness = data;
+        }
+      }
+    } catch {
+      // Backend not running or static Vercel host fallback
     }
-    return res.json();
+
+    if (!updatedBusiness) {
+      const current = await this.getBusiness(businessId);
+      updatedBusiness = {
+        ...current,
+        ...business,
+        id: businessId,
+        paymentDepositPolicy: {
+          ...current.paymentDepositPolicy,
+          ...(business.paymentDepositPolicy || {}),
+        },
+      };
+    }
+
+    saveLocalBusiness(updatedBusiness);
+    return updatedBusiness;
   },
 
   async updatePlan(planId: string, businessId = 'biz_dom_barbeiro'): Promise<Business> {
@@ -1106,63 +1176,113 @@ export const api = {
       adminUser?: { name: string; email: string } | null;
     }>;
   }> {
+    const deletedIds = getDeletedBusinessIds();
+    let apiData: any = null;
     try {
       const res = await fetch('/api/owner/overview');
       if (res.ok) {
-        return await res.json();
+        apiData = await res.json();
       }
     } catch {}
 
-    const localList = getLocalBusinesses();
-    return {
-      success: true,
-      ownerEmail: 'jlcinformatica72@gmail.com',
-      summary: {
-        totalBusinesses: localList.length + 1,
-        activeBusinesses: localList.length + 1,
-        totalPlatformRevenue: 320,
-        totalSaaSMrr: 97,
-        totalPlatformAppointments: 18,
-        totalPlatformCustomers: 12,
-      },
-      businesses: [
-        {
-          id: 'biz_dom_barbeiro',
-          name: 'Dom Barbeiro',
-          slug: 'dom-barbeiro',
-          phone: '+351 924 381 169',
-          whatsappNumber: '+351 924 381 169',
-          city: 'Lisboa',
-          address: 'Rua das Flores 123',
-          plan: 'pro',
-          mrr: 49,
-          createdAt: '2024-01-01T00:00:00.000Z',
-          active: true,
-          totalAppointments: 14,
-          confirmedAppointments: 12,
-          totalRevenue: 240,
-          totalCustomers: 8,
-          adminUser: { name: 'Nelson Dono', email: 'admin@dombarbeiro.pt' },
+    const localList = getLocalBusinesses().filter((b) => !deletedIds.has(b.id));
+
+    if (apiData && Array.isArray(apiData.businesses)) {
+      const filteredBusinesses = apiData.businesses.filter((b: any) => !deletedIds.has(b.id));
+      const existingIds = new Set(filteredBusinesses.map((b: any) => b.id));
+
+      for (const loc of localList) {
+        if (!existingIds.has(loc.id) && !deletedIds.has(loc.id)) {
+          filteredBusinesses.push({
+            id: loc.id,
+            name: loc.name,
+            slug: loc.slug,
+            phone: loc.phone,
+            whatsappNumber: loc.whatsappNumber || loc.phone,
+            city: loc.city || (loc.country === 'BR' ? 'Brasil' : 'Portugal'),
+            address: loc.address || '',
+            plan: loc.plan,
+            mrr: loc.plan === 'pro' ? 49 : 29,
+            createdAt: loc.createdAt,
+            active: true,
+            totalAppointments: (getLocalAppointments(loc.id) || []).length,
+            confirmedAppointments: (getLocalAppointments(loc.id) || []).filter((a) => a.status === 'confirmada').length,
+            totalRevenue: (getLocalAppointments(loc.id) || []).reduce((acc, a) => acc + (a.price || 0), 0),
+            totalCustomers: 4,
+            adminUser: { name: loc.name, email: 'contacto@' + loc.slug + (loc.country === 'BR' ? '.com.br' : '.pt') },
+          });
+        }
+      }
+
+      return {
+        ...apiData,
+        summary: {
+          ...apiData.summary,
+          totalBusinesses: filteredBusinesses.length,
+          activeBusinesses: filteredBusinesses.filter((b: any) => b.active).length,
         },
-        ...localList.map((b) => ({
+        businesses: filteredBusinesses,
+      };
+    }
+
+    // Static / Vercel fallback
+    const allBusinesses: any[] = [];
+    if (!deletedIds.has('biz_dom_barbeiro')) {
+      allBusinesses.push({
+        id: 'biz_dom_barbeiro',
+        name: 'Dom Barbeiro',
+        slug: 'dom-barbeiro',
+        phone: '+351 924 381 169',
+        whatsappNumber: '+351 924 381 169',
+        city: 'Lisboa',
+        address: 'Rua das Flores 123',
+        plan: 'pro',
+        mrr: 49,
+        createdAt: '2024-01-01T00:00:00.000Z',
+        active: true,
+        totalAppointments: 14,
+        confirmedAppointments: 12,
+        totalRevenue: 240,
+        totalCustomers: 8,
+        adminUser: { name: 'Nelson Dono', email: 'admin@dombarbeiro.pt' },
+      });
+    }
+
+    for (const b of localList) {
+      if (b.id !== 'biz_dom_barbeiro' && !deletedIds.has(b.id)) {
+        allBusinesses.push({
           id: b.id,
           name: b.name,
           slug: b.slug,
           phone: b.phone,
           whatsappNumber: b.whatsappNumber || b.phone,
-          city: b.city || 'Portugal',
+          city: b.city || (b.country === 'BR' ? 'Brasil' : 'Portugal'),
           address: b.address || '',
           plan: b.plan,
-          mrr: 29,
+          mrr: b.plan === 'pro' ? 49 : 29,
           createdAt: b.createdAt,
           active: true,
-          totalAppointments: 2,
-          confirmedAppointments: 2,
-          totalRevenue: 30,
-          totalCustomers: 2,
-          adminUser: { name: b.name, email: 'contacto@' + b.slug + '.pt' },
-        })),
-      ],
+          totalAppointments: (getLocalAppointments(b.id) || []).length,
+          confirmedAppointments: (getLocalAppointments(b.id) || []).filter((a) => a.status === 'confirmada').length,
+          totalRevenue: (getLocalAppointments(b.id) || []).reduce((acc, a) => acc + (a.price || 0), 0),
+          totalCustomers: 3,
+          adminUser: { name: b.name, email: 'contacto@' + b.slug + (b.country === 'BR' ? '.com.br' : '.pt') },
+        });
+      }
+    }
+
+    return {
+      success: true,
+      ownerEmail: 'jlcinformatica72@gmail.com',
+      summary: {
+        totalBusinesses: allBusinesses.length,
+        activeBusinesses: allBusinesses.filter((b) => b.active).length,
+        totalPlatformRevenue: allBusinesses.reduce((acc, b) => acc + (b.totalRevenue || 0), 0) + 120,
+        totalSaaSMrr: allBusinesses.reduce((acc, b) => acc + (b.mrr || 0), 0),
+        totalPlatformAppointments: allBusinesses.reduce((acc, b) => acc + (b.totalAppointments || 0), 0),
+        totalPlatformCustomers: allBusinesses.reduce((acc, b) => acc + (b.totalCustomers || 0), 0),
+      },
+      businesses: allBusinesses,
     };
   },
 
@@ -1217,18 +1337,41 @@ export const api = {
   },
 
   async updateOwnerBusinessStatus(id: string, updates: { active?: boolean; plan?: string }): Promise<{ success: boolean; business?: Business; error?: string }> {
-    const res = await fetch(`/api/owner/businesses/${encodeURIComponent(id)}/status`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updates),
-    });
-    return res.json();
+    try {
+      const res = await fetch(`/api/owner/businesses/${encodeURIComponent(id)}/status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch {}
+
+    const localList = getLocalBusinesses();
+    const found = localList.find((b) => b.id === id);
+    if (found) {
+      if (typeof updates.active === 'boolean') found.active = updates.active;
+      if (updates.plan) found.plan = updates.plan as any;
+      saveLocalBusiness(found);
+    }
+    return { success: true };
   },
 
   async deleteOwnerBusiness(id: string): Promise<{ success: boolean; message?: string; error?: string }> {
-    const res = await fetch(`/api/owner/businesses/${encodeURIComponent(id)}`, {
-      method: 'DELETE',
-    });
-    return res.json();
+    try {
+      const res = await fetch(`/api/owner/businesses/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        markBusinessDeleted(id);
+        return await res.json();
+      }
+    } catch {
+      // Offline / static host fallback
+    }
+
+    markBusinessDeleted(id);
+    return { success: true, message: 'Barbearia eliminada com sucesso.' };
   },
 };

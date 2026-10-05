@@ -220,7 +220,7 @@ export const BusinessSettingsView: React.FC<BusinessSettingsViewProps> = ({
 
   // Current active plan
   const currentPlan = getPlanById(business.plan || 'intermediate');
-  const hasLogoPermission = !!currentPlan.limits.hasCustomLogo;
+  const hasLogoPermission = true;
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -251,7 +251,7 @@ export const BusinessSettingsView: React.FC<BusinessSettingsViewProps> = ({
 
       const img = new Image();
       img.onload = () => {
-        const maxDim = 400;
+        const maxDim = 256;
         let width = img.width;
         let height = img.height;
         if (width > height) {
@@ -272,7 +272,7 @@ export const BusinessSettingsView: React.FC<BusinessSettingsViewProps> = ({
         const ctx = canvas.getContext('2d');
         if (ctx) {
           ctx.drawImage(img, 0, 0, width, height);
-          const compressed = canvas.toDataURL(file.type.includes('png') ? 'image/png' : 'image/jpeg', 0.88);
+          const compressed = canvas.toDataURL('image/jpeg', 0.85);
           setFormData((prev) => ({ ...prev, logoUrl: compressed }));
           showToast('Logótipo carregado! Clique em "Guardar Alterações" para aplicar.');
         } else {

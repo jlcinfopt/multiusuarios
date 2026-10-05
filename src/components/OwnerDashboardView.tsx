@@ -73,6 +73,8 @@ export const OwnerDashboardView: React.FC<OwnerDashboardViewProps> = ({
   const [planFilter, setPlanFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [businessToDelete, setBusinessToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
 
   // New Business Form State
@@ -153,21 +155,27 @@ export const OwnerDashboardView: React.FC<OwnerDashboardViewProps> = ({
     }
   };
 
-  const handleDeleteBusiness = async (id: string, name: string) => {
-    if (!window.confirm(`Tem a certeza que deseja remover a barbearia "${name}"?`)) {
-      return;
-    }
+  const handleDeleteClick = (id: string, name: string) => {
+    setBusinessToDelete({ id, name });
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!businessToDelete) return;
+    setIsDeleting(true);
     try {
-      const res = await api.deleteOwnerBusiness(id);
+      const res = await api.deleteOwnerBusiness(businessToDelete.id);
       if (res.success) {
-        setActionSuccess(`Barbearia "${name}" removida com sucesso.`);
-        setTimeout(() => setActionSuccess(null), 3000);
+        setActionSuccess(`Barbearia "${businessToDelete.name}" removida com sucesso.`);
+        setTimeout(() => setActionSuccess(null), 3500);
+        setBusinessToDelete(null);
         await loadOwnerData();
       } else {
         alert(res.error || 'Não foi possível remover a barbearia.');
       }
     } catch (err) {
       alert('Erro ao remover barbearia.');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -462,15 +470,13 @@ export const OwnerDashboardView: React.FC<OwnerDashboardViewProps> = ({
                     </button>
 
                     {/* Delete */}
-                    {biz.id !== 'biz_dom_barbeiro' && (
-                      <button
-                        onClick={() => handleDeleteBusiness(biz.id, biz.name)}
-                        className="p-2 bg-rose-950/40 hover:bg-rose-900/60 border border-rose-500/30 text-rose-400 rounded-xl transition cursor-pointer"
-                        title="Eliminar Barbearia"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    )}
+                    <button
+                      onClick={() => handleDeleteClick(biz.id, biz.name)}
+                      className="p-2 bg-rose-950/40 hover:bg-rose-900/60 border border-rose-500/30 text-rose-400 rounded-xl transition cursor-pointer"
+                      title="Eliminar Barbearia"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 </div>
 
@@ -641,6 +647,60 @@ export const OwnerDashboardView: React.FC<OwnerDashboardViewProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {businessToDelete && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#161b22] border border-rose-500/40 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4 animate-scale-in">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 rounded-2xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400 shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white">Eliminar Barbearia</h3>
+                <p className="text-xs text-slate-400">Ação de Administrador Geral</p>
+              </div>
+            </div>
+
+            <p className="text-sm text-slate-300">
+              Tem a certeza de que deseja eliminar permanentemente a barbearia <strong className="text-white">"{businessToDelete.name}"</strong>?
+            </p>
+
+            <div className="p-3 rounded-xl bg-rose-950/30 border border-rose-500/20 text-xs text-rose-300/90">
+              Esta ação removerá a barbearia, os agendamentos associados e o acesso público à mesma.
+            </div>
+
+            <div className="flex items-center justify-end space-x-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setBusinessToDelete(null)}
+                disabled={isDeleting}
+                className="px-4 py-2 bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-bold rounded-xl transition cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                disabled={isDeleting}
+                className="px-5 py-2 bg-rose-600 hover:bg-rose-500 text-white text-xs font-black rounded-xl transition shadow-lg shadow-rose-950/50 cursor-pointer disabled:opacity-50 flex items-center space-x-1.5"
+              >
+                {isDeleting ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>A eliminar...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Eliminar Barbearia</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}
