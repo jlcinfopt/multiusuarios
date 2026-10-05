@@ -191,14 +191,20 @@ export default function App() {
     [selectedDate]
   );
 
-  const handleAdminLoginSuccess = async (userData?: { role?: string; email?: string; businessId?: string }) => {
+  const handleAdminLoginSuccess = async (userData?: { role?: string; email?: string; username?: string; businessId?: string }) => {
     setIsAdminLoggedIn(true);
     localStorage.setItem('barberflow_admin_auth', 'true');
     if (userData?.businessId) {
       localStorage.setItem('barberflow_active_biz', userData.businessId);
     }
     await loadAllData();
-    if (userData?.role === 'SUPER_ADMIN' || userData?.email?.toLowerCase() === 'jlcinformatica72@gmail.com') {
+    const isOwner =
+      userData?.role === 'SUPER_ADMIN' ||
+      userData?.email?.toLowerCase().includes('jlcinformatica') ||
+      userData?.username?.toLowerCase().includes('jlcinformatica') ||
+      localStorage.getItem('barberflow_owner_auth') === 'true';
+
+    if (isOwner) {
       localStorage.setItem('barberflow_owner_auth', 'true');
       setCurrentMode('owner_dashboard');
     } else {

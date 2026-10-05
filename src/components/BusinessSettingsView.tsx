@@ -614,21 +614,12 @@ export const BusinessSettingsView: React.FC<BusinessSettingsViewProps> = ({
                         <ImageIcon className="w-4 h-4 text-amber-400" />
                         <span>Logótipo da Barbearia</span>
                       </h3>
-                      {hasLogoPermission ? (
-                        <span className="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold px-2 py-0.5 rounded-md uppercase">
-                          Plano Profissional
-                        </span>
-                      ) : (
-                        <span className="bg-slate-800 text-slate-300 border border-slate-700 text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center space-x-1">
-                          <Lock className="w-3 h-3 text-amber-400" />
-                          <span>A partir do Plano Profissional (20€/mês)</span>
-                        </span>
-                      )}
+                      <span className="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold px-2 py-0.5 rounded-md uppercase">
+                        {currentPlan.name}
+                      </span>
                     </div>
                     <p className="text-xs text-slate-400 max-w-xl">
-                      {hasLogoPermission
-                        ? 'O seu logótipo oficial é apresentado no topo do sistema, na página de agendamento online dos clientes e no branding geral.'
-                        : 'Personalize o logótipo da sua barbearia para destacar a sua marca no agendamento online e no topo do sistema. Esta funcionalidade está disponível a partir do Plano Profissional (20€/mês).'}
+                      O seu logótipo oficial é apresentado no topo do sistema, na página de agendamento online dos clientes e no branding geral da sua barbearia ({currentPlan.name}).
                     </p>
                   </div>
                 </div>

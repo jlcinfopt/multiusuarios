@@ -652,7 +652,13 @@ export const SaaSLandingView: React.FC<SaaSLandingViewProps> = ({
         onClose={() => setIsAdminLoginOpen(false)}
         onSuccess={(userData) => {
           setIsAdminLoginOpen(false);
-          if (userData?.role === 'SUPER_ADMIN' || userData?.email === 'jlcinformatica72@gmail.com') {
+          const isOwner =
+            userData?.role === 'SUPER_ADMIN' ||
+            userData?.email?.toLowerCase().includes('jlcinformatica') ||
+            userData?.username?.toLowerCase().includes('jlcinformatica') ||
+            localStorage.getItem('barberflow_owner_auth') === 'true';
+
+          if (isOwner) {
             onOpenOwnerDashboard?.();
           } else {
             onOpenAdminPanel();

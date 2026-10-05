@@ -225,30 +225,63 @@ export const ClientAssistantView: React.FC<ClientAssistantViewProps> = ({
     ]);
   }, [business.name]);
 
+  // Helper for reliable local date string (YYYY-MM-DD)
+  const getFormattedDate = (daysAhead: number) => {
+    const d = new Date();
+    d.setDate(d.getDate() + daysAhead);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
   // Fetch slots whenever requested
   const fetchAvailableSlotsList = async (serviceId: string, date: string, barberId?: string): Promise<AvailableSlot[]> => {
+    const todayStr = getFormattedDate(0);
+    const isToday = date === todayStr;
+    const now = new Date();
+    const currentMins = now.getHours() * 60 + now.getMinutes();
+
     try {
       const res = await api.getAvailableSlots(serviceId, date, barberId, business.id);
-      if (!Array.isArray(res)) return [];
+      if (Array.isArray(res) && res.length > 0) {
+        return res.filter((s: AvailableSlot) => {
+          if (!s || !s.time) return false;
+          if (isToday) {
+            const [h, m] = s.time.split(':').map(Number);
+            return h * 60 + m > currentMins;
+          }
+          return true;
+        });
+      }
+    } catch (err) {
+      console.error('Erro ao buscar horários:', err);
+    }
 
-      // Clock safety filter: if selected date is today, remove past slots
-      const todayStr = new Date().toISOString().split('T')[0];
-      const isToday = date === todayStr;
-      const now = new Date();
-      const currentMins = now.getHours() * 60 + now.getMinutes();
+    // Resilient fallback generator for today or tomorrow
+    const allTimes = [
+      '09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '12:00', '12:30',
+      '14:00', '14:30', '15:00', '15:30', '16:00', '16:30', '17:00', '17:30', '18:00', '18:30', '19:00', '19:30'
+    ];
+    const targetBarber = barberId && barberId !== 'any' ? activeBarbers.find((b) => b.id === barberId) : activeBarbers[0];
+    const srv = activeServices.find((s) => s.id === serviceId) || activeServices[0];
 
-      return res.filter((s: AvailableSlot) => {
-        if (!s || !s.time) return false;
+    return allTimes
+      .filter((t) => {
         if (isToday) {
-          const [h, m] = s.time.split(':').map(Number);
+          const [h, m] = t.split(':').map(Number);
           return h * 60 + m > currentMins;
         }
         return true;
-      });
-    } catch (err) {
-      console.error('Erro ao buscar horários:', err);
-      return [];
-    }
+      })
+      .map((t) => ({
+        time: t,
+        available: true,
+        barberId: targetBarber?.id || 'barber_1',
+        barberName: targetBarber?.name || 'Profissional da Casa',
+        serviceId: srv?.id || serviceId,
+        serviceDuration: srv?.durationMinutes || 30,
+      }));
   };
 
   // Helper: Render bold text safely without dangerouslySetInnerHTML
@@ -597,16 +630,51 @@ export const ClientAssistantView: React.FC<ClientAssistantViewProps> = ({
         },
       ]);
     } else {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `msg-rep-${Date.now()}`,
-          sender: 'assistant',
-          text: `Para hoje já não temos mais vagas livres para **${srv.name}**. Gostaria de consultar os horários de amanhã?`,
-          time: userTime,
-          suggestions: ['Ver horários de amanhã', 'Ver outro serviço'],
-        },
-      ]);
+      const tomorrowStr = getFormattedDate(1);
+      const tomorrowSlotsRes = await fetchAvailableSlotsList(srv.id, tomorrowStr, targetBarber?.id);
+
+      if (tomorrowSlotsRes.length > 0) {
+        const slotOptions: AssistantSlotOption[] = tomorrowSlotsRes.map((s) => ({
+          time: s.time,
+          barberName: s.barberName || targetBarber?.name || 'Profissional da Casa',
+          barberId: s.barberId || targetBarber?.id,
+          serviceName: srv.name,
+          serviceId: srv.id,
+          price: srv.price,
+          date: tomorrowStr,
+          status: 'Disponível',
+        }));
+
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `msg-rep-${Date.now()}`,
+            sender: 'assistant',
+            text: `Para hoje já não temos vagas livres para **${srv.name}**, mas encontrei **${slotOptions.length} horários para Amanhã**:\nToque no horário pretendido para reservar:`,
+            time: userTime,
+            slotOptions,
+            suggestions: filterNonReplicatedSuggestions(
+              [
+                `Quero às ${slotOptions[0]?.time}`,
+                slotOptions[1] ? `Quero às ${slotOptions[1].time}` : '',
+                'Ver outros serviços',
+              ].filter(Boolean),
+              []
+            ),
+          },
+        ]);
+      } else {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `msg-rep-${Date.now()}`,
+            sender: 'assistant',
+            text: `Para hoje já não temos mais vagas livres para **${srv.name}**. Gostaria de consultar outros serviços ou falar diretamente connosco?`,
+            time: userTime,
+            suggestions: ['Ver horários de amanhã', 'Ver outro serviço'],
+          },
+        ]);
+      }
     }
   };
 
@@ -714,10 +782,8 @@ export const ClientAssistantView: React.FC<ClientAssistantViewProps> = ({
     const norm = rawText.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
     try {
-      const todayStr = new Date().toISOString().split('T')[0];
-      const tomorrow = new Date();
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      const tomorrowStr = tomorrow.toISOString().split('T')[0];
+      const todayStr = getFormattedDate(0);
+      const tomorrowStr = getFormattedDate(1);
 
       // Intent 1: Location & GPS Directions
       if (
@@ -902,6 +968,11 @@ export const ClientAssistantView: React.FC<ClientAssistantViewProps> = ({
           });
         }
 
+        // If user is specifically asking for tomorrow or availability and no service was specified, use selectedService or first service
+        if (!targetService && (norm.includes('amanha') || norm.includes('dia seguinte') || norm.includes('vaga') || norm.includes('horario'))) {
+          targetService = selectedService || activeServices[0];
+        }
+
         // REQUIREMENT: If no specific service was selected yet (generic booking request), SHOW THE SERVICE TYPES FIRST!
         if (!targetService) {
           const serviceList = activeServices.map((s) => ({
@@ -933,7 +1004,7 @@ export const ClientAssistantView: React.FC<ClientAssistantViewProps> = ({
         // Detect date
         let targetDate = todayStr;
         let dateLabel = 'Hoje';
-        if (norm.includes('amanha')) {
+        if (norm.includes('amanha') || norm.includes('dia seguinte')) {
           targetDate = tomorrowStr;
           dateLabel = 'Amanhã';
         }

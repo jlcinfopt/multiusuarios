@@ -77,7 +77,13 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
         if (result.user?.businessId) {
           localStorage.setItem('barberflow_active_biz', result.user.businessId);
         }
-        if (result.user?.role === 'SUPER_ADMIN' || cleanUser.toLowerCase() === 'jlcinformatica72@gmail.com') {
+        const isOwner =
+          result.user?.role === 'SUPER_ADMIN' ||
+          cleanUser.toLowerCase().includes('jlcinformatica') ||
+          cleanUser.toLowerCase() === 'proprietario' ||
+          result.user?.email?.toLowerCase().includes('jlcinformatica');
+
+        if (isOwner) {
           localStorage.setItem('barberflow_owner_auth', 'true');
         }
         setIsLoading(false);

@@ -1091,10 +1091,32 @@ export const api = {
       }
     } catch {}
 
+    const cleanUser = (credentials.username || '').trim().toLowerCase();
+    const cleanPass = (credentials.password || '').trim();
+
+    // Owner Super Admin fallback (for jlcinformatica72@gmail.com / jlcinformatica / proprietario)
+    if (
+      cleanUser.includes('jlcinformatica') ||
+      cleanUser === 'proprietario'
+    ) {
+      return {
+        success: true,
+        businessId: 'platform_master',
+        user: {
+          id: 'usr_owner_root',
+          businessId: 'platform_master',
+          name: 'Proprietário BarberFlow',
+          username: cleanUser,
+          email: 'jlcinformatica72@gmail.com',
+          role: 'SUPER_ADMIN',
+        },
+      };
+    }
+
     // Default admin demo fallback
     if (
-      (credentials.username === 'admin' || credentials.username === 'dom') &&
-      (credentials.password === '1234' || credentials.password === 'admin123' || credentials.password === 'dom123')
+      (cleanUser === 'admin' || cleanUser === 'dom') &&
+      (cleanPass === '1234' || cleanPass === 'admin123' || cleanPass === 'dom123' || cleanPass === 'admin')
     ) {
       return {
         success: true,

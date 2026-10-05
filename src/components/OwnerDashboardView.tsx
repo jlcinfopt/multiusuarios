@@ -373,10 +373,9 @@ export const OwnerDashboardView: React.FC<OwnerDashboardViewProps> = ({
               className="bg-[#0d1117] border border-white/10 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-[#c9a227] cursor-pointer"
             >
               <option value="all">Todos os Planos</option>
-              <option value="starter">Starter (29€/mês)</option>
-              <option value="intermediate">Intermédio (49€/mês)</option>
-              <option value="pro">Pro (89€/mês)</option>
-              <option value="free">Gratuito (0€)</option>
+              <option value="free">Plano Grátis (0€/mês)</option>
+              <option value="intermediate">Plano Intermédio (12€/mês)</option>
+              <option value="pro">Plano Profissional (20€/mês)</option>
             </select>
 
             {/* Status Filter */}
@@ -510,10 +509,9 @@ export const OwnerDashboardView: React.FC<OwnerDashboardViewProps> = ({
                       onChange={(e) => handleChangePlan(biz.id, e.target.value)}
                       className="bg-[#0d1117] border border-white/10 rounded-lg px-2 py-1 text-xs text-amber-300 font-bold focus:outline-none cursor-pointer mt-1"
                     >
-                      <option value="starter">Starter (29€)</option>
-                      <option value="intermediate">Intermédio (49€)</option>
-                      <option value="pro">Pro (89€)</option>
-                      <option value="free">Gratuito (0€)</option>
+                      <option value="free">Plano Grátis (0€/mês)</option>
+                      <option value="intermediate">Plano Intermédio (12€/mês)</option>
+                      <option value="pro">Plano Profissional (20€/mês)</option>
                     </select>
                   </div>
                 </div>
@@ -611,10 +609,9 @@ export const OwnerDashboardView: React.FC<OwnerDashboardViewProps> = ({
                     onChange={(e) => setNewPlan(e.target.value)}
                     className="w-full bg-[#0d1117] border border-white/10 rounded-xl p-2.5 text-white focus:border-[#c9a227] focus:outline-none cursor-pointer"
                   >
-                    <option value="starter">Starter (29€/mês)</option>
-                    <option value="intermediate">Intermédio (49€/mês)</option>
-                    <option value="pro">Pro (89€/mês)</option>
-                    <option value="free">Gratuito</option>
+                    <option value="free">Plano Grátis (0€/mês)</option>
+                    <option value="intermediate">Plano Intermédio (12€/mês)</option>
+                    <option value="pro">Plano Profissional (20€/mês)</option>
                   </select>
                 </div>
               </div>
