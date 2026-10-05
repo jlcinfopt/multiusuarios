@@ -24,6 +24,12 @@ async function startServer() {
     res.json({ status: 'ok', time: new Date().toISOString() });
   });
 
+  // Download ZIP endpoint
+  app.get(['/barberflow-app.zip', '/download-zip'], (req, res) => {
+    const zipPath = path.join(process.cwd(), 'public', 'barberflow-app.zip');
+    res.download(zipPath, 'barberflow-app.zip');
+  });
+
   // ----------------------------------------------------
   // NATIVE SHORT LINK REDIRECTS (Sem serviços externos)
   // Permite abrir direto o assistente de marcação encurtado: /m/:slug, /agendar/:slug, etc.

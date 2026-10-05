@@ -1,0 +1,11 @@
+{
+  "framework": "vite",
+  "rewrites": [
+    { "source": "/m/:slug*", "destination": "/index.html" },
+    { "source": "/agendar/:slug*", "destination": "/index.html" },
+    { "source": "/marcar/:slug*", "destination": "/index.html" },
+    { "source": "/b/:slug*", "destination": "/index.html" },
+    { "source": "/barberflow-app.zip", "destination": "/barberflow-app.zip" },
+    { "source": "/((?!api/|assets/|favicon.ico|barberflow-app.zip|.*\\..*).*)$", "destination": "/index.html" }
+  ]
+}
