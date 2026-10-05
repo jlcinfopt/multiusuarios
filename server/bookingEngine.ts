@@ -203,7 +203,7 @@ export class BookingEngine {
 
       // Appointments that occupy this barber (or any unassigned barber appointment)
       const barberAppointments = activeAppointments.filter(
-        (apt) => !apt.barberId || apt.barberId === barber.id || eligibleBarbers.length === 1
+        (apt) => !apt.barberId || apt.barberId === barber.id
       );
 
       for (
@@ -324,8 +324,11 @@ export class BookingEngine {
 
     const business = db.businesses.get(businessId);
 
+    const isBrazil = business?.country === 'BR' || business?.currency === 'BRL';
+    const businessTimezone = business?.timezone || (isBrazil ? 'America/Sao_Paulo' : 'Europe/Lisbon');
+
     // CLOCK VALIDATION: Verify date and time are not in the past relative to the business clock
-    const nowInfo = getNowInTimezone(business?.timezone || 'Europe/Lisbon');
+    const nowInfo = getNowInTimezone(businessTimezone);
     if (date < nowInfo.dateStr) {
       return {
         success: false,
@@ -416,20 +419,22 @@ export class BookingEngine {
     }
 
     try {
-      // Re-verify availability at the exact moment of booking (Double-Check rule)
-      const currentAvailableSlots = this.getAvailableSlots(
-        businessId,
-        serviceId,
-        date,
-        targetBarberId
-      );
-      const isStillAvailable = currentAvailableSlots.some((s) => s.time === time);
+      // Re-verify availability: check direct appointment collision for this barber
+      const slotMins = timeToMinutes(time);
+      const slotEndMins = slotMins + (service.durationMinutes || 30);
+      const hasConflict = Array.from(db.appointments.values()).some((apt) => {
+        if (apt.businessId !== businessId || apt.date !== date || apt.status === 'cancelada') return false;
+        if (apt.barberId && apt.barberId !== barber.id) return false;
+        const aptStart = timeToMinutes(apt.time);
+        const aptEnd = aptStart + (apt.durationMinutes || 30);
+        return slotMins < aptEnd && slotEndMins > aptStart;
+      });
 
-      if (!isStillAvailable) {
-        const altSlots = this.getAvailableSlots(businessId, serviceId, date);
+      if (hasConflict) {
+        const altSlots = this.getAvailableSlots(businessId, serviceId, date, targetBarberId);
         return {
           success: false,
-          error: `O horário ${time} em ${date} já não está livre. Apresentamos alternativas próximas:`,
+          error: `O horário ${time} em ${date} já não está livre com ${barber.name}. Por favor escolha outro horário.`,
           alternatives: altSlots.slice(0, 4),
         };
       }
@@ -500,8 +505,10 @@ export class BookingEngine {
 
       // Auto-dispatch WhatsApp notification to barber & customer
       const business = db.businesses.get(businessId);
-      const barberPhone = barber.phone || business?.whatsappNumber || '+351 924 381 169';
-      const whatsappMsg = `🔔 *Nova Marcação (Assistente IA)*\n\n👤 *Cliente:* ${customer.name} (${customer.phone})\n✂️ *Serviço:* ${service.name} (${service.price}€)\n💈 *Barbeiro:* ${barber.name}\n📅 *Data:* ${date} às ${time}\n\n_Sincronizado automaticamente com a Agenda e Google Calendar._`;
+      const isBr = business?.country === 'BR' || business?.currency === 'BRL';
+      const formattedPrice = isBr ? `R$ ${service.price.toFixed(2).replace('.', ',')}` : `${service.price}€`;
+      const barberPhone = barber.phone || business?.whatsappNumber || (isBr ? '+55 11 99999-8888' : '+351 924 381 169');
+      const whatsappMsg = `🔔 *Nova Marcação (Assistente IA)*\n\n👤 *Cliente:* ${customer.name} (${customer.phone})\n✂️ *Serviço:* ${service.name} (${formattedPrice})\n💈 *Barbeiro:* ${barber.name}\n📅 *Data:* ${date} às ${time}\n\n_Sincronizado automaticamente com a Agenda e Google Calendar._`;
 
       const provider = getWhatsAppProvider();
       provider.sendMessage({
@@ -510,7 +517,7 @@ export class BookingEngine {
         metadata: { businessId, customerName: barber.name }
       }).catch(() => {});
 
-      const clientMsg = `Olá ${customer.name}! 🎉 O seu agendamento na *${business?.name || 'Barbearia'}* está confirmado:\n✂️ *Serviço:* ${service.name} (${service.price}€)\n💈 *Barbeiro:* ${barber.name}\n📅 *Data:* ${date} às ${time}\n📍 *Local:* ${business?.address || 'Barbearia'}\n\nObrigado pela preferência!`;
+      const clientMsg = `Olá ${customer.name}! 🎉 O seu agendamento na *${business?.name || 'Barbearia'}* está confirmado:\n✂️ *Serviço:* ${service.name} (${formattedPrice})\n💈 *Barbeiro:* ${barber.name}\n📅 *Data:* ${date} às ${time}\n📍 *Local:* ${business?.address || 'Barbearia'}\n\nObrigado pela preferência!`;
       provider.sendMessage({
         to: customer.phone,
         text: clientMsg,

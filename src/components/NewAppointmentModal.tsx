@@ -1,13 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { X, Calendar, Clock, Scissors, User, Phone, CheckCircle2 } from 'lucide-react';
-import { Service, Barber, AvailableSlot } from '../types';
+import { Service, Barber, AvailableSlot, Business } from '../types';
 import { api } from '../api';
+import { formatMoney } from '../utils/currency';
 
 interface NewAppointmentModalProps {
   isOpen: boolean;
   onClose: () => void;
   services: Service[];
   barbers: Barber[];
+  business?: Business;
   defaultDate?: string;
   defaultTime?: string;
   defaultBarberId?: string;
@@ -26,17 +28,43 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   onClose,
   services,
   barbers,
+  business,
   defaultDate,
   defaultTime,
   defaultBarberId,
   defaultServiceId,
   onSuccess,
 }) => {
+  const isBrazil = business?.country === 'BR' || business?.currency === 'BRL';
+
+  // Deduplicate services and barbers strictly to prevent repeated entries in select dropdowns
+  const uniqueServices = useMemo(() => {
+    const seen = new Set<string>();
+    return services.filter((s) => {
+      const key = (s.name || '').toLowerCase().trim();
+      if (seen.has(key) || seen.has(s.id)) return false;
+      seen.add(key);
+      seen.add(s.id);
+      return true;
+    });
+  }, [services]);
+
+  const uniqueBarbers = useMemo(() => {
+    const seen = new Set<string>();
+    return barbers.filter((b) => {
+      const key = (b.name || '').toLowerCase().trim();
+      if (seen.has(key) || seen.has(b.id)) return false;
+      seen.add(key);
+      seen.add(b.id);
+      return true;
+    });
+  }, [barbers]);
+
   const [selectedServiceId, setSelectedServiceId] = useState<string>(
-    defaultServiceId || services[0]?.id || ''
+    defaultServiceId || uniqueServices[0]?.id || ''
   );
   const [selectedBarberId, setSelectedBarberId] = useState<string>(
-    defaultBarberId || barbers[0]?.id || ''
+    defaultBarberId || uniqueBarbers[0]?.id || ''
   );
   const [date, setDate] = useState<string>(
     defaultDate || new Date().toISOString().split('T')[0]
@@ -45,7 +73,9 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [notes, setNotes] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState<'mbway' | 'card' | 'multibanco' | 'balcao'>('mbway');
+  const [paymentMethod, setPaymentMethod] = useState<'mbway' | 'pix' | 'card' | 'multibanco' | 'balcao'>(
+    isBrazil ? 'pix' : 'mbway'
+  );
   const [hasDeposit, setHasDeposit] = useState(false);
   const [availableSlots, setAvailableSlots] = useState<AvailableSlot[]>([]);
   const [isLoadingSlots, setIsLoadingSlots] = useState(false);
@@ -58,12 +88,13 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       if (defaultDate) setDate(defaultDate);
       if (defaultTime) setTime(defaultTime);
       if (defaultBarberId) setSelectedBarberId(defaultBarberId);
-      else if (barbers[0]?.id) setSelectedBarberId(barbers[0].id);
+      else if (uniqueBarbers[0]?.id) setSelectedBarberId(uniqueBarbers[0].id);
       if (defaultServiceId) setSelectedServiceId(defaultServiceId);
-      else if (services[0]?.id) setSelectedServiceId(services[0].id);
+      else if (uniqueServices[0]?.id) setSelectedServiceId(uniqueServices[0].id);
+      setPaymentMethod(isBrazil ? 'pix' : 'mbway');
       setErrorMessage('');
     }
-  }, [isOpen, defaultDate, defaultTime, defaultBarberId, defaultServiceId, barbers, services]);
+  }, [isOpen, defaultDate, defaultTime, defaultBarberId, defaultServiceId, uniqueBarbers, uniqueServices, isBrazil]);
 
   useEffect(() => {
     if (selectedServiceId && date && selectedBarberId) {
@@ -74,7 +105,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       const currentMinutes = now.getHours() * 60 + now.getMinutes();
 
       api
-        .getAvailableSlots(selectedServiceId, date, selectedBarberId)
+        .getAvailableSlots(selectedServiceId, date, selectedBarberId, business?.id)
         .then((slots) => {
           let validSlots = Array.isArray(slots) ? slots : [];
           if (isToday) {
@@ -100,7 +131,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
         })
         .finally(() => setIsLoadingSlots(false));
     }
-  }, [selectedServiceId, date, selectedBarberId]);
+  }, [selectedServiceId, date, selectedBarberId, business?.id]);
 
   if (!isOpen) return null;
 
@@ -114,7 +145,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     setErrorMessage('');
 
     try {
-      const selectedService = services.find((s) => s.id === selectedServiceId);
+      const selectedService = uniqueServices.find((s) => s.id === selectedServiceId);
       const servicePrice = selectedService?.price || 15;
       const depositAmount = hasDeposit ? +(servicePrice * 0.5).toFixed(2) : undefined;
 
@@ -129,6 +160,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
         paymentMethod,
         depositAmount,
         paidAmount: depositAmount,
+        businessId: business?.id,
       });
 
       if (res.success) {
@@ -173,9 +205,9 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                 onChange={(e) => setSelectedServiceId(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-800 text-white p-2.5 rounded-xl focus:ring-1 focus:ring-amber-400"
               >
-                {services.map((s) => (
+                {uniqueServices.map((s) => (
                   <option key={s.id} value={s.id}>
-                    {s.name} ({s.price}€ - {s.durationMinutes}min)
+                    {s.name} ({formatMoney(s.price, business)} - {s.durationMinutes}min)
                   </option>
                 ))}
               </select>
@@ -188,7 +220,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                 onChange={(e) => setSelectedBarberId(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-800 text-white p-2.5 rounded-xl focus:ring-1 focus:ring-amber-400"
               >
-                {barbers.map((b) => (
+                {uniqueBarbers.map((b) => (
                   <option key={b.id} value={b.id}>
                     {b.name}
                   </option>
@@ -241,7 +273,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
               <input
                 type="text"
                 required
-                placeholder="Ex: Pedro Alentejano"
+                placeholder={isBrazil ? 'Ex: Carlos Silva' : 'Ex: Pedro Alentejano'}
                 value={customerName}
                 onChange={(e) => setCustomerName(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-800 text-white p-2.5 rounded-xl"
@@ -249,11 +281,11 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
             </div>
 
             <div>
-              <label className="block text-slate-300 font-bold mb-1">Telemóvel *</label>
+              <label className="block text-slate-300 font-bold mb-1">{isBrazil ? 'Celular / WhatsApp *' : 'Telemóvel *'}</label>
               <input
                 type="tel"
                 required
-                placeholder="Ex: 919 888 777"
+                placeholder={isBrazil ? 'Ex: (11) 98765-4321' : 'Ex: 919 888 777'}
                 value={customerPhone}
                 onChange={(e) => setCustomerPhone(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-800 text-white p-2.5 rounded-xl"
@@ -264,13 +296,20 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
           {/* Payment Method & Anti-Prejuízo Deposit */}
           <div className="space-y-2 p-3 rounded-2xl bg-slate-950/60 border border-slate-800">
             <label className="block text-slate-300 font-bold">Forma de Pagamento Prevista</label>
-            <div className="grid grid-cols-4 gap-2">
-              {[
-                { id: 'mbway', label: 'MB WAY' },
-                { id: 'card', label: 'Cartão' },
-                { id: 'multibanco', label: 'Multibanco' },
-                { id: 'balcao', label: 'Balcão' },
-              ].map((m) => (
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+              {(isBrazil
+                ? [
+                    { id: 'pix', label: 'PIX (Sinal)' },
+                    { id: 'card', label: 'Cartão' },
+                    { id: 'balcao', label: 'No Balcão' },
+                  ]
+                : [
+                    { id: 'mbway', label: 'MB WAY' },
+                    { id: 'card', label: 'Cartão' },
+                    { id: 'multibanco', label: 'Multibanco' },
+                    { id: 'balcao', label: 'Balcão' },
+                  ]
+              ).map((m) => (
                 <button
                   key={m.id}
                   type="button"

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Scissors,
   User,
@@ -24,6 +24,7 @@ import {
 import { Service, Barber, Business } from '../types';
 import { api } from '../api';
 import { getPlanById } from '../plans';
+import { formatMoney } from '../utils/currency';
 
 const PRESET_BARBER_AVATARS = [
   { label: 'Barbeiro 1', url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=250&auto=format&fit=crop&q=80' },
@@ -35,17 +36,43 @@ const PRESET_BARBER_AVATARS = [
 ];
 
 interface ServicesBarbersViewProps {
+  business: Business;
   services: Service[];
   barbers: Barber[];
   onRefresh: () => void;
 }
 
 export const ServicesBarbersView: React.FC<ServicesBarbersViewProps> = ({
+  business,
   services,
   barbers,
   onRefresh,
 }) => {
-  const [business, setBusiness] = useState<Business | null>(null);
+  const isBrazil = business?.country === 'BR' || business?.currency === 'BRL';
+
+  // Deduplicate services and barbers strictly to prevent repeated entries in UI
+  const uniqueServices = useMemo(() => {
+    const seen = new Set<string>();
+    return services.filter((s) => {
+      const key = (s.name || '').toLowerCase().trim();
+      if (seen.has(key) || seen.has(s.id)) return false;
+      seen.add(key);
+      seen.add(s.id);
+      return true;
+    });
+  }, [services]);
+
+  const uniqueBarbers = useMemo(() => {
+    const seen = new Set<string>();
+    return barbers.filter((b) => {
+      const key = (b.name || '').toLowerCase().trim();
+      if (seen.has(key) || seen.has(b.id)) return false;
+      seen.add(key);
+      seen.add(b.id);
+      return true;
+    });
+  }, [barbers]);
+
   const [activeTab, setActiveTab] = useState<'services' | 'barbers'>('services');
 
   // Deletion modals state
@@ -60,7 +87,7 @@ export const ServicesBarbersView: React.FC<ServicesBarbersViewProps> = ({
   // Service form modal state
   const [isServiceModalOpen, setIsServiceModalOpen] = useState(false);
   const [newServiceName, setNewServiceName] = useState('');
-  const [newServicePrice, setNewServicePrice] = useState('18');
+  const [newServicePrice, setNewServicePrice] = useState(isBrazil ? '45' : '18');
   const [newServiceDuration, setNewServiceDuration] = useState('30');
   const [newServiceDescription, setNewServiceDescription] = useState('');
 
@@ -77,28 +104,20 @@ export const ServicesBarbersView: React.FC<ServicesBarbersViewProps> = ({
   const [isDraggingAvatar, setIsDraggingAvatar] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    api.getBusiness().then((b) => setBusiness(b));
-  }, []);
-
   const currentPlan = getPlanById(business?.plan);
-  const isBarberLimitReached = barbers.length >= currentPlan.limits.maxBarbers;
+  const isBarberLimitReached = uniqueBarbers.length >= (currentPlan.limits.maxBarbers || 5);
 
   const handleOpenAddBarber = () => {
-    if (isBarberLimitReached) {
-      setIsUpgradeModalOpen(true);
-    } else {
-      setEditingBarber(null);
-      setSaveError(null);
-      setNewBarberName('');
-      setNewBarberPhone('');
-      setNewBarberSpecialties('Degradê, Barba Navalhada');
-      setNewBarberStart('09:00');
-      setNewBarberEnd('19:00');
-      setNewBarberAvatar(PRESET_BARBER_AVATARS[0].url);
-      setAvatarUploadTab('upload');
-      setIsBarberModalOpen(true);
-    }
+    setEditingBarber(null);
+    setSaveError(null);
+    setNewBarberName('');
+    setNewBarberPhone('');
+    setNewBarberSpecialties('Degradê, Barba Navalhada');
+    setNewBarberStart('09:00');
+    setNewBarberEnd('19:00');
+    setNewBarberAvatar(PRESET_BARBER_AVATARS[0].url);
+    setAvatarUploadTab('upload');
+    setIsBarberModalOpen(true);
   };
 
   const handleOpenEditBarber = (barber: Barber) => {
@@ -154,8 +173,7 @@ export const ServicesBarbersView: React.FC<ServicesBarbersViewProps> = ({
   const handleUpgradePlan = async (newPlanId: 'intermediate' | 'pro') => {
     if (!business) return;
     try {
-      const updated = await api.updatePlan(newPlanId, business.id || 'biz_dom_barbeiro');
-      setBusiness(updated);
+      await api.updatePlan(newPlanId, business.id || 'biz_dom_barbeiro');
       setIsUpgradeModalOpen(false);
       await onRefresh();
     } catch (err) {
@@ -167,7 +185,9 @@ export const ServicesBarbersView: React.FC<ServicesBarbersViewProps> = ({
     e.preventDefault();
     if (!newServiceName.trim()) return;
 
+    const bizId = business?.id || localStorage.getItem('barberflow_active_biz') || 'biz_dom_barbeiro';
     await api.createService({
+      businessId: bizId,
       name: newServiceName,
       price: parseFloat(newServicePrice) || 15,
       durationMinutes: parseInt(newServiceDuration) || 30,
@@ -178,7 +198,7 @@ export const ServicesBarbersView: React.FC<ServicesBarbersViewProps> = ({
     setIsServiceModalOpen(false);
     setNewServiceName('');
     setNewServiceDescription('');
-    onRefresh();
+    await onRefresh();
   };
 
   const handleSaveBarber = async (e: React.FormEvent) => {
@@ -186,21 +206,35 @@ export const ServicesBarbersView: React.FC<ServicesBarbersViewProps> = ({
     if (!newBarberName.trim()) return;
     setSaveError(null);
 
+    const bizId = business.id || localStorage.getItem('barberflow_active_biz') || 'biz_dom_barbeiro';
+
+    if (!editingBarber && isBarberLimitReached) {
+      setSaveError(`Limite atingido! O seu ${currentPlan.name} permite até ${currentPlan.limits.maxBarbers} barbeiro(s). Faça upgrade de plano para adicionar mais profissionais.`);
+      setIsUpgradeModalOpen(true);
+      return;
+    }
+
     try {
       if (editingBarber) {
-        await api.updateBarber(editingBarber.id, {
-          name: newBarberName,
-          phone: newBarberPhone.trim(),
-          specialties: newBarberSpecialties.split(',').map((s) => s.trim()),
-          workStart: newBarberStart,
-          workEnd: newBarberEnd,
-          avatarUrl:
-            newBarberAvatar.trim() ||
-            editingBarber.avatarUrl ||
-            PRESET_BARBER_AVATARS[0].url,
-        });
+        await api.updateBarber(
+          editingBarber.id,
+          {
+            businessId: bizId,
+            name: newBarberName,
+            phone: newBarberPhone.trim(),
+            specialties: newBarberSpecialties.split(',').map((s) => s.trim()),
+            workStart: newBarberStart,
+            workEnd: newBarberEnd,
+            avatarUrl:
+              newBarberAvatar.trim() ||
+              editingBarber.avatarUrl ||
+              PRESET_BARBER_AVATARS[0].url,
+          },
+          bizId
+        );
       } else {
         await api.createBarber({
+          businessId: bizId,
           name: newBarberName,
           phone: newBarberPhone.trim(),
           specialties: newBarberSpecialties.split(',').map((s) => s.trim()),
@@ -220,9 +254,12 @@ export const ServicesBarbersView: React.FC<ServicesBarbersViewProps> = ({
       setEditingBarber(null);
       setNewBarberName('');
       setNewBarberPhone('');
-      onRefresh();
+      await onRefresh();
     } catch (err: any) {
       setSaveError(err.message || 'Erro ao guardar barbeiro.');
+      if (err.message && err.message.toLowerCase().includes('limite')) {
+        setIsUpgradeModalOpen(true);
+      }
     }
   };
 
@@ -230,9 +267,10 @@ export const ServicesBarbersView: React.FC<ServicesBarbersViewProps> = ({
     if (!barberToDelete) return;
     setIsDeleting(true);
     try {
-      await api.deleteBarber(barberToDelete.id);
+      const bizId = business?.id || localStorage.getItem('barberflow_active_biz') || 'biz_dom_barbeiro';
+      await api.deleteBarber(barberToDelete.id, bizId);
       setBarberToDelete(null);
-      onRefresh();
+      await onRefresh();
     } catch (err) {
       console.error('Erro ao excluir barbeiro:', err);
     } finally {
@@ -244,9 +282,10 @@ export const ServicesBarbersView: React.FC<ServicesBarbersViewProps> = ({
     if (!serviceToDelete) return;
     setIsDeleting(true);
     try {
-      await api.deleteService(serviceToDelete.id);
+      const bizId = business?.id || localStorage.getItem('barberflow_active_biz') || 'biz_dom_barbeiro';
+      await api.deleteService(serviceToDelete.id, bizId);
       setServiceToDelete(null);
-      onRefresh();
+      await onRefresh();
     } catch (err) {
       console.error('Erro ao excluir serviço:', err);
     } finally {
@@ -281,7 +320,7 @@ export const ServicesBarbersView: React.FC<ServicesBarbersViewProps> = ({
             }`}
           >
             <Scissors className="w-3.5 h-3.5" />
-            <span>Serviços ({services.length})</span>
+            <span>Serviços ({uniqueServices.length})</span>
           </button>
           <button
             onClick={() => setActiveTab('barbers')}
@@ -292,7 +331,7 @@ export const ServicesBarbersView: React.FC<ServicesBarbersViewProps> = ({
             }`}
           >
             <User className="w-3.5 h-3.5" />
-            <span>Barbeiros ({barbers.length})</span>
+            <span>Barbeiros ({uniqueBarbers.length})</span>
           </button>
         </div>
       </div>
@@ -317,7 +356,7 @@ export const ServicesBarbersView: React.FC<ServicesBarbersViewProps> = ({
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {services.map((service) => (
+            {uniqueServices.map((service) => (
               <div
                 key={service.id}
                 className="luxury-card rounded-3xl p-6 border border-white/[0.08] hover:border-amber-500/30 transition-all flex flex-col justify-between shadow-xl shadow-black/30 group"
@@ -329,7 +368,7 @@ export const ServicesBarbersView: React.FC<ServicesBarbersViewProps> = ({
                     </h3>
                     <div className="flex items-center space-x-2.5">
                       <span className="text-lg font-black text-amber-400 font-mono">
-                        {service.price}€
+                        {formatMoney(service.price, business)}
                       </span>
                       <button
                         title="Excluir Serviço"
@@ -373,7 +412,7 @@ export const ServicesBarbersView: React.FC<ServicesBarbersViewProps> = ({
                   Equipa de Barbeiros & Horários de Trabalho
                 </h2>
                 <span className="text-[11px] px-2.5 py-0.5 rounded-full font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30">
-                  {barbers.length} de {currentPlan.limits.maxBarbers === 999 ? 'Ilimitado' : currentPlan.limits.maxBarbers} ({currentPlan.name})
+                  {uniqueBarbers.length} de {currentPlan.limits.maxBarbers === 999 ? 'Ilimitado' : currentPlan.limits.maxBarbers} ({currentPlan.name})
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">Controla os turnos e pausas respeitados pelo Booking Engine</p>
@@ -387,7 +426,7 @@ export const ServicesBarbersView: React.FC<ServicesBarbersViewProps> = ({
             </button>
           </div>
 
-          {barbers.length === 0 ? (
+          {uniqueBarbers.length === 0 ? (
             <div className="text-center py-16 px-4 border border-dashed border-white/10 rounded-3xl bg-white/[0.01]">
               <div className="w-14 h-14 rounded-2xl bg-white/[0.04] border border-white/[0.08] flex items-center justify-center mx-auto mb-3">
                 <User className="w-7 h-7 text-amber-400" />
@@ -406,7 +445,7 @@ export const ServicesBarbersView: React.FC<ServicesBarbersViewProps> = ({
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              {barbers.map((barber) => (
+              {uniqueBarbers.map((barber) => (
               <div
                 key={barber.id}
                 className="luxury-card rounded-3xl p-6 border border-white/[0.08] hover:border-amber-500/30 transition-all space-y-4 shadow-xl shadow-black/30 group"
@@ -511,7 +550,7 @@ export const ServicesBarbersView: React.FC<ServicesBarbersViewProps> = ({
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-300 font-semibold mb-1.5">Preço (€) *</label>
+                  <label className="block text-slate-300 font-semibold mb-1.5">Preço ({business?.country === 'BR' ? 'R$' : '€'}) *</label>
                   <input
                     type="number"
                     required

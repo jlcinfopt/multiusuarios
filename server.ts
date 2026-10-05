@@ -275,6 +275,12 @@ async function startServer() {
       address,
       slogan,
       plan = 'intermediate',
+      country = 'PT',
+      currency,
+      timezone,
+      pixKey,
+      pixKeyType,
+      pixMerchantName,
     } = req.body;
 
     if (!name || !email || !password) {
@@ -293,17 +299,26 @@ async function startServer() {
     }
 
     const newId = 'biz_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
+    const isBrazil = country === 'BR' || currency === 'BRL';
+    const finalCurrency = currency || (isBrazil ? 'BRL' : 'EUR');
+    const finalTimezone = timezone || (isBrazil ? 'America/Sao_Paulo' : 'Europe/Lisbon');
+    const defaultPhone = isBrazil ? '+55 11 98765-4321' : '+351 924 381 169';
 
     const newBiz: Business = {
       id: newId,
       name,
       slug: rawSlug,
-      phone: phone || '+351 924 381 169',
-      whatsappNumber: phone || '+351 924 381 169',
-      address: address || 'Portugal',
-      city: city || 'Lisboa',
-      postalCode: '1000-001',
-      timezone: 'Europe/Lisbon',
+      phone: phone || defaultPhone,
+      whatsappNumber: phone || defaultPhone,
+      address: address || (isBrazil ? 'Brasil' : 'Portugal'),
+      city: city || (isBrazil ? 'São Paulo' : 'Lisboa'),
+      postalCode: isBrazil ? '01000-000' : '1000-001',
+      timezone: finalTimezone,
+      country: isBrazil ? 'BR' : 'PT',
+      currency: finalCurrency,
+      pixKey: pixKey || (isBrazil ? (phone || defaultPhone) : undefined),
+      pixKeyType: pixKeyType || 'phone',
+      pixMerchantName: pixMerchantName || ownerName || name,
       createdAt: new Date().toISOString(),
       plan,
       slogan: slogan || 'Cortes modernos e barba tradicional',
@@ -311,12 +326,17 @@ async function startServer() {
         enabled: true,
         mode: 'deposit_50',
         depositPercentage: 50,
-        acceptedMethods: ['mbway', 'card'],
-        mbwayPhone: phone || '+351 924 381 169',
+        acceptedMethods: isBrazil ? ['pix', 'card'] : ['mbway', 'card'],
+        mbwayPhone: phone || defaultPhone,
         mbwayMerchantName: name,
+        pixKey: pixKey || (isBrazil ? (phone || defaultPhone) : undefined),
+        pixKeyType: pixKeyType || 'phone',
+        pixMerchantName: pixMerchantName || ownerName || name,
         noShowRetentionPercentage: 50,
         cancellationNoticeHours: 2,
-        rulesDescription: 'Sinal de 50% na marcação (MB WAY ou Cartão) para reserva imediata de horário.',
+        rulesDescription: isBrazil
+          ? 'Sinal de 50% na marcação via PIX para garantia e reserva imediata do horário.'
+          : 'Sinal de 50% na marcação (MB WAY ou Cartão) para reserva imediata de horário.',
       },
       hours: {
         segunda: { isOpen: true, openTime: '09:00', closeTime: '20:00', hasBreak: true, breakStart: '13:00', breakEnd: '14:00' },
@@ -597,18 +617,22 @@ async function startServer() {
   });
 
   app.delete('/api/barbers/:id', (req, res) => {
-    const barber = db.barbers.get(req.params.id);
-    if (!barber) return res.status(404).json({ error: 'Barbeiro não encontrado' });
+    const barber = db.barbers.get(req.params.id) || Array.from(db.barbers.values()).find((b) => b.id === req.params.id);
+    if (barber) {
+      db.barbers.delete(barber.id);
+      db.addAuditLog(barber.businessId, 'BARBEIRO_REMOVIDO', 'Administrador', `Barbeiro "${barber.name}" foi removido da equipa.`);
+    }
     db.barbers.delete(req.params.id);
-    db.addAuditLog(barber.businessId, 'BARBEIRO_REMOVIDO', 'Administrador', `Barbeiro "${barber.name}" foi removido da equipa.`);
     res.json({ success: true, message: 'Barbeiro removido com sucesso.' });
   });
 
   app.delete('/api/services/:id', (req, res) => {
-    const service = db.services.get(req.params.id);
-    if (!service) return res.status(404).json({ error: 'Serviço não encontrado' });
+    const service = db.services.get(req.params.id) || Array.from(db.services.values()).find((s) => s.id === req.params.id);
+    if (service) {
+      db.services.delete(service.id);
+      db.addAuditLog(service.businessId, 'SERVICO_REMOVIDO', 'Administrador', `Serviço "${service.name}" foi removido.`);
+    }
     db.services.delete(req.params.id);
-    db.addAuditLog(service.businessId, 'SERVICO_REMOVIDO', 'Administrador', `Serviço "${service.name}" foi removido.`);
     res.json({ success: true, message: 'Serviço removido com sucesso.' });
   });
 
@@ -631,17 +655,42 @@ async function startServer() {
   });
 
   app.post('/api/appointments', (req, res) => {
-    const { businessId, serviceId, barberId, customerName, customerPhone, date, time, notes } = req.body;
+    const {
+      businessId,
+      serviceId,
+      barberId,
+      customerName,
+      customerPhone,
+      customerEmail,
+      date,
+      time,
+      notes,
+      source = 'manual',
+      paymentMethod,
+      paymentStatus,
+      depositAmount,
+      paidAmount,
+      mbwayPhoneUsed,
+      paymentTransactionId,
+    } = req.body;
+
     const result = bookingEngine.createAppointment({
       businessId: businessId || 'biz_dom_barbeiro',
       serviceId,
       barberId,
       customerName,
       customerPhone,
+      customerEmail,
       date,
       time,
       notes,
-      source: 'manual',
+      source: source || 'manual',
+      paymentMethod,
+      paymentStatus,
+      depositAmount,
+      paidAmount,
+      mbwayPhoneUsed,
+      paymentTransactionId,
     });
     if (!result.success) {
       return res.status(400).json(result);

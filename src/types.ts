@@ -18,6 +18,7 @@ export type PaymentStatus =
 
 export type PaymentMethod =
   | 'mbway'
+  | 'pix'
   | 'card'
   | 'multibanco'
   | 'balcao';
@@ -26,9 +27,14 @@ export interface PaymentDepositPolicy {
   enabled: boolean;
   mode: 'deposit_50' | 'full_100_retain_50';
   depositPercentage: number; // 50%
-  acceptedMethods: ('mbway' | 'card' | 'multibanco')[];
+  acceptedMethods: ('mbway' | 'pix' | 'card' | 'multibanco')[];
   mbwayPhone: string;
   mbwayMerchantName?: string;
+  // Brasil PIX Support
+  pixKey?: string;
+  pixKeyType?: 'cpf' | 'cnpj' | 'email' | 'phone' | 'random';
+  pixMerchantName?: string;
+  pixMerchantCity?: string;
   gatewayProvider?: 'ifthenpay' | 'eupago' | 'stripe' | 'direct';
   ifthenpayMbwayKey?: string;
   ifthenpayBackofficeKey?: string;
@@ -111,6 +117,13 @@ export interface Business {
   plan?: SubscriptionPlanId;
   slogan?: string;
   logoUrl?: string;
+  // Multi-country support: Portugal (PT / EUR) or Brasil (BR / BRL)
+  country?: 'PT' | 'BR';
+  currency?: 'EUR' | 'BRL';
+  pixKey?: string;
+  pixKeyType?: 'cpf' | 'cnpj' | 'email' | 'phone' | 'random';
+  pixMerchantName?: string;
+  pixMerchantCity?: string;
   paymentDepositPolicy?: PaymentDepositPolicy;
   webhookUrl?: string;
 }

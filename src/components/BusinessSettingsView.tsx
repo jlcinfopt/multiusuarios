@@ -99,6 +99,11 @@ export const BusinessSettingsView: React.FC<BusinessSettingsViewProps> = ({
     slug: business.slug || 'minha-barbearia',
     logoUrl: business.logoUrl || '',
     webhookUrl: business.webhookUrl || '',
+    country: business.country || 'PT',
+    currency: business.currency || (business.country === 'BR' ? 'BRL' : 'EUR'),
+    pixKey: business.pixKey || business.paymentDepositPolicy?.pixKey || '',
+    pixKeyType: business.pixKeyType || business.paymentDepositPolicy?.pixKeyType || 'phone',
+    pixMerchantName: business.pixMerchantName || business.paymentDepositPolicy?.pixMerchantName || business.name || '',
   });
 
   // Form State - Hours
@@ -130,6 +135,11 @@ export const BusinessSettingsView: React.FC<BusinessSettingsViewProps> = ({
       slug: business.slug || 'minha-barbearia',
       logoUrl: business.logoUrl || '',
       webhookUrl: business.webhookUrl || '',
+      country: business.country || 'PT',
+      currency: business.currency || (business.country === 'BR' ? 'BRL' : 'EUR'),
+      pixKey: business.pixKey || business.paymentDepositPolicy?.pixKey || '',
+      pixKeyType: business.pixKeyType || business.paymentDepositPolicy?.pixKeyType || 'phone',
+      pixMerchantName: business.pixMerchantName || business.paymentDepositPolicy?.pixMerchantName || business.name || '',
     });
     setHoursData(business.hours);
     setPaymentPolicyData({
@@ -301,10 +311,18 @@ export const BusinessSettingsView: React.FC<BusinessSettingsViewProps> = ({
         slug: formData.slug.toLowerCase().replace(/[^a-z0-9-]/g, '-'),
         logoUrl: formData.logoUrl.trim(),
         webhookUrl: formData.webhookUrl.trim(),
+        country: (formData.country as 'PT' | 'BR') || 'PT',
+        currency: (formData.country === 'BR' ? 'BRL' : 'EUR'),
+        pixKey: formData.pixKey.trim(),
+        pixKeyType: formData.pixKeyType as any,
+        pixMerchantName: formData.pixMerchantName.trim(),
         paymentDepositPolicy: {
           ...paymentPolicyData,
           mbwayPhone: updatedMbWayPhone,
           mbwayMerchantName: formData.name.trim() || business.name,
+          pixKey: formData.pixKey.trim(),
+          pixKeyType: formData.pixKeyType as any,
+          pixMerchantName: formData.pixMerchantName.trim(),
         },
       });
       showToast('Dados e logótipo da barbearia guardados com sucesso!');
@@ -700,6 +718,99 @@ export const BusinessSettingsView: React.FC<BusinessSettingsViewProps> = ({
                         <span>{preset.name}</span>
                       </button>
                     ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Country & Currency Selector: Portugal 🇵🇹 / Brasil 🇧🇷 */}
+            <div className="bg-[#0b1323] border border-amber-500/30 p-5 rounded-2xl space-y-4 shadow-lg shadow-black/40">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-bold text-white flex items-center space-x-2">
+                    <Globe className="w-4 h-4 text-amber-400" />
+                    <span>País de Atuação & Moeda da Barbearia</span>
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Selecione onde a sua barbearia opera para definir automaticamente a moeda (€ ou R$), o método de sinal (MB WAY ou PIX) e formato de telemóvel.
+                  </p>
+                </div>
+                <div className="flex items-center space-x-2 bg-[#070b14] p-1.5 rounded-xl border border-white/10 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFormData({ ...formData, country: 'PT', currency: 'EUR' });
+                      showToast('País definido como Portugal (Euro € / MB WAY)');
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer ${
+                      formData.country !== 'BR'
+                        ? 'bg-amber-500 text-slate-950 shadow-md font-black'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <span>🇵🇹 Portugal (Euro €)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFormData({ ...formData, country: 'BR', currency: 'BRL' });
+                      showToast('País definido como Brasil (Real R$ / PIX)');
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer ${
+                      formData.country === 'BR'
+                        ? 'bg-emerald-500 text-slate-950 shadow-md font-black'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <span>🇧🇷 Brasil (Real R$)</span>
+                  </button>
+                </div>
+              </div>
+
+              {formData.country === 'BR' && (
+                <div className="p-4 bg-emerald-950/40 border border-emerald-500/30 rounded-xl space-y-3 text-xs animate-fade-in">
+                  <div className="flex items-center space-x-2 text-emerald-300 font-bold">
+                    <Sparkles className="w-4 h-4 text-emerald-400" />
+                    <span>Configuração de Chave PIX da Barbearia (Brasil 🇧🇷)</span>
+                  </div>
+                  <p className="text-[11px] text-slate-300">
+                    O sinal de agendamento será cobrado via PIX. Os clientes verão a sua chave e código Copia e Cola para transferir direto para a sua conta.
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="text-slate-300 font-semibold block mb-1">Tipo de Chave PIX</label>
+                      <select
+                        value={formData.pixKeyType}
+                        onChange={(e) => setFormData({ ...formData, pixKeyType: e.target.value as any })}
+                        className="w-full bg-[#070b14] border border-white/10 text-white p-2.5 rounded-xl text-xs focus:outline-none focus:border-emerald-400 cursor-pointer"
+                      >
+                        <option value="phone">Telefone / Celular</option>
+                        <option value="cpf">CPF</option>
+                        <option value="cnpj">CNPJ</option>
+                        <option value="email">E-mail</option>
+                        <option value="random">Chave Aleatória (EVP)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-slate-300 font-semibold block mb-1">Chave PIX</label>
+                      <input
+                        type="text"
+                        placeholder="Ex: 11999998888 ou chave@email.com"
+                        value={formData.pixKey}
+                        onChange={(e) => setFormData({ ...formData, pixKey: e.target.value })}
+                        className="w-full bg-[#070b14] border border-white/10 text-white p-2.5 rounded-xl text-xs font-mono focus:outline-none focus:border-emerald-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-300 font-semibold block mb-1">Nome do Titular da Conta</label>
+                      <input
+                        type="text"
+                        placeholder="Ex: Carlos Silva ou Barbearia VIP"
+                        value={formData.pixMerchantName}
+                        onChange={(e) => setFormData({ ...formData, pixMerchantName: e.target.value })}
+                        className="w-full bg-[#070b14] border border-white/10 text-white p-2.5 rounded-xl text-xs focus:outline-none focus:border-emerald-400"
+                      />
+                    </div>
                   </div>
                 </div>
               )}

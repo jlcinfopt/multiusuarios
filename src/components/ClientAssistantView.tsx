@@ -20,10 +20,13 @@ import {
   Smartphone,
   CreditCard,
   Lock,
+  QrCode,
+  Copy,
 } from 'lucide-react';
 import { Business, Service, Barber, AvailableSlot } from '../types';
 import { api } from '../api';
 import { AdminLoginModal } from './AdminLoginModal';
+import { formatMoney } from '../utils/currency';
 
 interface ClientAssistantViewProps {
   business: Business;
@@ -114,7 +117,7 @@ export const ClientAssistantView: React.FC<ClientAssistantViewProps> = ({
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerNotes, setCustomerNotes] = useState('');
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'balcao' | 'mbway' | 'card'>('mbway');
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<'balcao' | 'mbway' | 'pix' | 'card'>('mbway');
   const [bookingFormError, setBookingFormError] = useState<string | null>(null);
   const [phoneRiskState, setPhoneRiskState] = useState<{ isRisk: boolean; forceAntiNoShow: boolean; cancellations: number }>({
     isRisk: false,
@@ -128,7 +131,7 @@ export const ClientAssistantView: React.FC<ClientAssistantViewProps> = ({
 
   // Interactive Real Payment Modal state
   const [activePaymentModal, setActivePaymentModal] = useState<{
-    type: 'mbway' | 'card';
+    type: 'mbway' | 'pix' | 'card';
     action: NonNullable<ChatMessage['bookingAction']>;
     depositVal: number;
     mbwayRes?: any;
@@ -172,8 +175,23 @@ export const ClientAssistantView: React.FC<ClientAssistantViewProps> = ({
   const [isAgentTyping, setIsAgentTyping] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  const activeServices = services.filter((s) => s.active !== false);
-  const activeBarbers = barbers.filter((b) => b.active !== false);
+  // Deduplicate services and barbers strictly to prevent repeated entries in UI
+  const activeServices: Service[] = Array.from(
+    new Map<string, Service>(
+      services
+        .filter((s) => s.active !== false)
+        .map((s) => [s.name.toLowerCase().trim(), s])
+    ).values()
+  );
+  const activeBarbers: Barber[] = Array.from(
+    new Map<string, Barber>(
+      barbers
+        .filter((b) => b.active !== false)
+        .map((b) => [b.name.toLowerCase().trim(), b])
+    ).values()
+  );
+
+  const isBrazil = business?.country === 'BR' || business?.currency === 'BRL';
 
   const directionsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
     (business.name || 'Barbearia') + ' ' + (business.address || '')
@@ -486,6 +504,112 @@ export const ClientAssistantView: React.FC<ClientAssistantViewProps> = ({
     await executeFinalBooking(action, depositVal);
   };
 
+  // Helper: Select service option directly to prevent duplication
+  const handleSelectServiceDirectly = async (srv: AssistantServiceOption) => {
+    const fullService = activeServices.find((s) => s.id === srv.id) || {
+      id: srv.id,
+      name: srv.name,
+      price: srv.price,
+      durationMinutes: srv.durationMinutes,
+      active: true,
+      businessId: business.id,
+      description: srv.description || '',
+    };
+    setSelectedService(fullService);
+
+    const userTime = new Date().toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
+
+    // Instantly clear suggestions and serviceOptions on previous messages so they never replicate in the chat
+    setMessages((prev) => [
+      ...prev.map((m) => ({ ...m, suggestions: undefined, serviceOptions: undefined })),
+      {
+        id: `msg-${Date.now()}`,
+        sender: 'client',
+        text: `Quero agendar ${srv.name}`,
+        time: userTime,
+      },
+    ]);
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const priceFormatted = formatMoney(srv.price, business);
+
+    // If multiple active barbers exist and none has been selected yet, prompt for barber
+    if (activeBarbers.length > 1 && !selectedBarberId) {
+      const barberOptions: ChatMessage['barberOptions'] = [
+        ...activeBarbers.map((b) => ({
+          id: b.id,
+          name: b.name,
+          photoUrl: b.avatarUrl,
+          specialties: b.specialties,
+        })),
+        { id: 'any', name: 'Qualquer Barbeiro (Sem preferência)' },
+      ];
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `msg-rep-${Date.now()}`,
+          sender: 'assistant',
+          text: `💈 **Escolha o seu barbeiro de preferência:**\nCom qual profissional prefere realizar o **${srv.name}** (${priceFormatted})?`,
+          time: userTime,
+          barberOptions,
+          suggestions: filterNonReplicatedSuggestions(
+            activeBarbers.map((b) => `Agendar com ${b.name}`).concat(['Qualquer barbeiro livre', 'Ver horários de amanhã']),
+            []
+          ),
+        },
+      ]);
+      return;
+    }
+
+    // Single barber or barber already selected: fetch slots directly
+    const targetBarber = selectedBarberId ? activeBarbers.find((b) => b.id === selectedBarberId) : activeBarbers[0];
+    const slotsRes = await fetchAvailableSlotsList(srv.id, todayStr, targetBarber?.id);
+
+    if (slotsRes.length > 0) {
+      const slotOptions: AssistantSlotOption[] = slotsRes.map((s) => ({
+        time: s.time,
+        barberName: s.barberName || targetBarber?.name || 'Profissional da Casa',
+        barberId: s.barberId || targetBarber?.id,
+        serviceName: srv.name,
+        serviceId: srv.id,
+        price: srv.price,
+        date: todayStr,
+        status: 'Disponível',
+      }));
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `msg-rep-${Date.now()}`,
+          sender: 'assistant',
+          text: `Perfeito! Encontrei **${slotOptions.length} horários livres** para **${srv.name}** (${priceFormatted}) para **Hoje**:\nToque no horário pretendido para reservar:`,
+          time: userTime,
+          slotOptions,
+          suggestions: filterNonReplicatedSuggestions(
+            [
+              `Quero às ${slotOptions[0]?.time}`,
+              slotOptions[1] ? `Quero às ${slotOptions[1].time}` : '',
+              'Ver horários de amanhã',
+            ].filter(Boolean),
+            []
+          ),
+        },
+      ]);
+    } else {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `msg-rep-${Date.now()}`,
+          sender: 'assistant',
+          text: `Para hoje já não temos mais vagas livres para **${srv.name}**. Gostaria de consultar os horários de amanhã?`,
+          time: userTime,
+          suggestions: ['Ver horários de amanhã', 'Ver outro serviço'],
+        },
+      ]);
+    }
+  };
+
   // Helper: Select barber option card
   const handleSelectBarberOption = async (barberId: string, barberName: string) => {
     const targetBarberId = barberId === 'any' ? undefined : barberId;
@@ -696,10 +820,9 @@ export const ClientAssistantView: React.FC<ClientAssistantViewProps> = ({
             serviceOptions: topServices,
             suggestions: filterNonReplicatedSuggestions(
               [
-                `Agendar ${topServices[0]?.name || 'Corte'}`,
-                `Agendar ${topServices[1]?.name || 'Barba'}`,
-                'Ver vagas para hoje',
+                '💈 Conhecer os barbeiros',
                 '⏰ Horários de atendimento',
+                '📍 Onde fica a barbearia?',
               ],
               updatedHistory
             ),
@@ -719,13 +842,16 @@ export const ClientAssistantView: React.FC<ClientAssistantViewProps> = ({
           .map((b) => `• **${b.name}** — ${b.specialties?.join(', ') || 'Especialista em Cortes & Barba'}`)
           .join('\n');
 
-        const barberOptions = activeBarbers.length > 1
-          ? activeBarbers.map((b) => ({
-              id: b.id,
-              name: b.name,
-              photoUrl: b.avatarUrl,
-              specialties: b.specialties,
-            })).concat([{ id: 'any', name: 'Qualquer Barbeiro (Sem preferência)' }])
+        const barberOptions: ChatMessage['barberOptions'] = activeBarbers.length > 1
+          ? [
+              ...activeBarbers.map((b) => ({
+                id: b.id,
+                name: b.name,
+                photoUrl: b.avatarUrl,
+                specialties: b.specialties,
+              })),
+              { id: 'any', name: 'Qualquer Barbeiro (Sem preferência)' },
+            ]
           : undefined;
 
         setMessages((prev) => [
@@ -795,7 +921,7 @@ export const ClientAssistantView: React.FC<ClientAssistantViewProps> = ({
               time: new Date().toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' }),
               serviceOptions: serviceList,
               suggestions: filterNonReplicatedSuggestions(
-                serviceList.map((s) => `Agendar ${s.name}`).concat(['⏰ Horários de atendimento', '💈 Ver barbeiros']),
+                ['💈 Ver barbeiros da equipa', '⏰ Horários de atendimento', '📍 Localização e morada'],
                 updatedHistory
               ),
             },
@@ -826,14 +952,15 @@ export const ClientAssistantView: React.FC<ClientAssistantViewProps> = ({
           !norm.includes('qualquer') &&
           !norm.includes('sem preferencia')
         ) {
-          const barberOptions = activeBarbers
-            .map((b) => ({
+          const barberOptions: ChatMessage['barberOptions'] = [
+            ...activeBarbers.map((b) => ({
               id: b.id,
               name: b.name,
               photoUrl: b.avatarUrl,
               specialties: b.specialties,
-            }))
-            .concat([{ id: 'any', name: 'Qualquer Barbeiro (Sem preferência)' }]);
+            })),
+            { id: 'any', name: 'Qualquer Barbeiro (Sem preferência)' },
+          ];
 
           setMessages((prev) => [
             ...prev,
@@ -1122,9 +1249,7 @@ export const ClientAssistantView: React.FC<ClientAssistantViewProps> = ({
                           {m.serviceOptions.map((srv) => (
                             <div
                               key={srv.id}
-                              onClick={() =>
-                                handleSendChatMessage(`Quero agendar ${srv.name}`)
-                              }
+                              onClick={() => handleSelectServiceDirectly(srv)}
                               className="p-3 rounded-xl bg-black/40 border border-white/10 hover:border-[#c9a227] hover:bg-[#c9a227]/10 flex items-center justify-between transition cursor-pointer group"
                             >
                               <div className="min-w-0 pr-2">
@@ -1132,7 +1257,7 @@ export const ClientAssistantView: React.FC<ClientAssistantViewProps> = ({
                                   {srv.name}
                                 </span>
                                 <span className="text-[11px] text-slate-400 mt-0.5 block">
-                                  {srv.durationMinutes} min • {srv.price}€
+                                  {srv.durationMinutes} min • {formatMoney(srv.price, business)}
                                 </span>
                               </div>
                               <button
@@ -1271,32 +1396,52 @@ export const ClientAssistantView: React.FC<ClientAssistantViewProps> = ({
                                 } ${(phoneRiskState.isRisk || phoneRiskState.forceAntiNoShow) ? 'opacity-40 cursor-not-allowed line-through' : ''}`}
                               >
                                 <div className="flex items-center justify-between">
-                                  <span>💶 Balcão</span>
+                                  <span>{isBrazil ? '💵 No Balcão' : '💶 Balcão'}</span>
                                   {selectedPaymentMethod === 'balcao' && <Check className="w-3.5 h-3.5 text-[#c9a227]" />}
                                 </div>
                                 <span className="block text-[10px] text-slate-500 font-normal mt-0.5">
-                                  {(phoneRiskState.isRisk || phoneRiskState.forceAntiNoShow) ? 'Bloqueado (Faltas)' : 'Em numerário'}
+                                  {(phoneRiskState.isRisk || phoneRiskState.forceAntiNoShow) ? 'Bloqueado (Faltas)' : (isBrazil ? 'Em dinheiro / cartão' : 'Em numerário')}
                                 </span>
                               </button>
 
-                              {/* MB WAY */}
-                              <button
-                                type="button"
-                                onClick={() => setSelectedPaymentMethod('mbway')}
-                                className={`p-2.5 rounded-xl border text-left text-xs font-bold transition-all cursor-pointer ${
-                                  selectedPaymentMethod === 'mbway'
-                                    ? 'bg-emerald-950/60 border-emerald-500 text-emerald-300 shadow-sm'
-                                    : 'bg-[#121212] border-white/10 text-slate-400 hover:text-white'
-                                }`}
-                              >
-                                <div className="flex items-center justify-between">
-                                  <span>📱 MB WAY</span>
-                                  {selectedPaymentMethod === 'mbway' && <Check className="w-3.5 h-3.5 text-emerald-400" />}
-                                </div>
-                                <span className="block text-[10px] text-emerald-400/80 font-normal mt-0.5">
-                                  Sinal 50% ({+(m.bookingAction.price * 0.5).toFixed(2)}€)
-                                </span>
-                              </button>
+                              {/* PIX (Brasil) or MB WAY (Portugal) */}
+                              {isBrazil ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedPaymentMethod('pix')}
+                                  className={`p-2.5 rounded-xl border text-left text-xs font-bold transition-all cursor-pointer ${
+                                    selectedPaymentMethod === 'pix'
+                                      ? 'bg-emerald-950/60 border-emerald-500 text-emerald-300 shadow-sm'
+                                      : 'bg-[#121212] border-white/10 text-slate-400 hover:text-white'
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <span>⚡ PIX (Sinal)</span>
+                                    {selectedPaymentMethod === 'pix' && <Check className="w-3.5 h-3.5 text-emerald-400" />}
+                                  </div>
+                                  <span className="block text-[10px] text-emerald-400/80 font-normal mt-0.5">
+                                    Sinal 50% ({formatMoney(+(m.bookingAction.price * 0.5).toFixed(2), business)})
+                                  </span>
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedPaymentMethod('mbway')}
+                                  className={`p-2.5 rounded-xl border text-left text-xs font-bold transition-all cursor-pointer ${
+                                    selectedPaymentMethod === 'mbway'
+                                      ? 'bg-emerald-950/60 border-emerald-500 text-emerald-300 shadow-sm'
+                                      : 'bg-[#121212] border-white/10 text-slate-400 hover:text-white'
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <span>📱 MB WAY</span>
+                                    {selectedPaymentMethod === 'mbway' && <Check className="w-3.5 h-3.5 text-emerald-400" />}
+                                  </div>
+                                  <span className="block text-[10px] text-emerald-400/80 font-normal mt-0.5">
+                                    Sinal 50% ({formatMoney(+(m.bookingAction.price * 0.5).toFixed(2), business)})
+                                  </span>
+                                </button>
+                              )}
 
                               {/* Cartão Online */}
                               <button
@@ -1313,26 +1458,31 @@ export const ClientAssistantView: React.FC<ClientAssistantViewProps> = ({
                                   {selectedPaymentMethod === 'card' && <Check className="w-3.5 h-3.5 text-blue-400" />}
                                 </div>
                                 <span className="block text-[10px] text-blue-400/80 font-normal mt-0.5">
-                                  Sinal 50% ({+(m.bookingAction.price * 0.5).toFixed(2)}€)
+                                  Sinal 50% ({formatMoney(+(m.bookingAction.price * 0.5).toFixed(2), business)})
                                 </span>
                               </button>
                             </div>
 
                             {/* Method Helper Notice */}
                             <div className="p-2.5 rounded-xl bg-black/40 border border-white/10 text-[11px] text-slate-300">
+                              {selectedPaymentMethod === 'pix' && (
+                                <p className="text-emerald-300 flex items-center space-x-1">
+                                  <span>⚡ Pague o sinal de <strong>{formatMoney(+(m.bookingAction.price * 0.5).toFixed(2), business)}</strong> via PIX direto para a chave da barbearia.</span>
+                                </p>
+                              )}
                               {selectedPaymentMethod === 'mbway' && (
                                 <p className="text-emerald-300 flex items-center space-x-1">
-                                  <span>📱 O pedido de MB WAY de <strong>{+(m.bookingAction.price * 0.5).toFixed(2)}€</strong> será enviado para o telemóvel <strong>{customerPhone || 'indicado acima'}</strong>.</span>
+                                  <span>📱 O pedido de MB WAY de <strong>{formatMoney(+(m.bookingAction.price * 0.5).toFixed(2), business)}</strong> será enviado para o telemóvel <strong>{customerPhone || 'indicado acima'}</strong>.</span>
                                 </p>
                               )}
                               {selectedPaymentMethod === 'card' && (
                                 <p className="text-blue-300 flex items-center space-x-1">
-                                  <span>💳 Transação online de <strong>{+(m.bookingAction.price * 0.5).toFixed(2)}€</strong> processada com segurança por Cartão / Apple Pay.</span>
+                                  <span>💳 Transação online de <strong>{formatMoney(+(m.bookingAction.price * 0.5).toFixed(2), business)}</strong> processada com segurança por Cartão / Apple Pay.</span>
                                 </p>
                               )}
                               {selectedPaymentMethod === 'balcao' && (
                                 <p className="text-[#fef08a] flex items-center space-x-1">
-                                  <span>💶 Pagamento total de <strong>{m.bookingAction.price}€</strong> em numerário no balcão após o serviço.</span>
+                                  <span>💵 Pagamento total de <strong>{formatMoney(m.bookingAction.price, business)}</strong> no balcão após o serviço.</span>
                                 </p>
                               )}
                             </div>

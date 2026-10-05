@@ -382,6 +382,7 @@ export default function App() {
 
           {currentMode === 'services' && (
             <ServicesBarbersView
+              business={business}
               services={services}
               barbers={barbers}
               onRefresh={loadAllData}
@@ -454,6 +455,7 @@ export default function App() {
       <NewAppointmentModal
         isOpen={isNewAppointmentOpen}
         onClose={() => setIsNewAppointmentOpen(false)}
+        business={business}
         services={services}
         barbers={barbers}
         defaultDate={newAppointmentDefaults.date || selectedDate}
