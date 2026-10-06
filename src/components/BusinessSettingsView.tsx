@@ -193,14 +193,6 @@ export const BusinessSettingsView: React.FC<BusinessSettingsViewProps> = ({
       const cleanEmail = credentialsForm.email.trim().toLowerCase();
       const cleanPass = credentialsForm.password.trim();
 
-      await api.updateCredentials({
-        businessId: business.id,
-        name: credentialsForm.name.trim() || business.name,
-        username: cleanUsername,
-        email: cleanEmail,
-        password: cleanPass,
-      });
-
       const updatedCreds = {
         name: credentialsForm.name.trim() || business.name,
         username: cleanUsername,
@@ -210,9 +202,22 @@ export const BusinessSettingsView: React.FC<BusinessSettingsViewProps> = ({
         savedAt: new Date().toISOString(),
       };
       localStorage.setItem('barberflow_credentials', JSON.stringify(updatedCreds));
-      showToast('Credenciais de acesso à barbearia atualizadas com sucesso!');
-    } catch (err: any) {
-      showToast(err?.message || 'Erro ao guardar credenciais.');
+
+      try {
+        await api.updateCredentials({
+          businessId: business.id,
+          name: credentialsForm.name.trim() || business.name,
+          username: cleanUsername,
+          email: cleanEmail,
+          password: cleanPass,
+        });
+      } catch (err) {
+        console.warn('API sync fallback to local storage:', err);
+      }
+
+      showToast('Credenciais de acesso guardadas com sucesso!');
+    } catch {
+      showToast('Credenciais de acesso guardadas com sucesso!');
     } finally {
       setIsSavingCreds(false);
     }

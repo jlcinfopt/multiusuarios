@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Scissors,
   Clock,
@@ -174,6 +174,12 @@ export const ClientAssistantView: React.FC<ClientAssistantViewProps> = ({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isAgentTyping, setIsAgentTyping] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+
+  // Auto-reset state after booking confirmation
+  const [autoResetCountdown, setAutoResetCountdown] = useState<number | null>(null);
+  const autoResetIntervalRef = useRef<number | null>(null);
+  const [justResetNotice, setJustResetNotice] = useState(false);
 
   // Deduplicate services and barbers strictly to prevent repeated entries in UI
   const activeServices: Service[] = Array.from(
@@ -205,25 +211,39 @@ export const ClientAssistantView: React.FC<ClientAssistantViewProps> = ({
       )}`
     : null;
 
+  // Helper to create clean initial welcome chat message
+  const createWelcomeChatMessage = useCallback((): ChatMessage => {
+    const nowObj = new Date();
+    const now = nowObj.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
+    const isPastTodayHours = nowObj.getHours() * 60 + nowObj.getMinutes() >= (19 * 60 + 30);
+    return {
+      id: 'msg-welcome',
+      sender: 'assistant',
+      text: `Olá! Bem-vindo à **${business.name || 'Barbearia'}** ✂️\nSou o seu assistente inteligente de agendamento 24/7. Como posso ajudar você hoje?`,
+      time: now,
+      suggestions: [
+        '🗓️ Quero agendar um horário',
+        '✂️ Ver serviços e preços',
+        isPastTodayHours ? '⏰ Horários de amanhã' : '⏰ Horários de hoje',
+        '💈 Nossos barbeiros',
+        '📍 Onde fica a barbearia?',
+      ],
+    };
+  }, [business.name]);
+
+  // Clean up auto-reset interval on unmount
+  useEffect(() => {
+    return () => {
+      if (autoResetIntervalRef.current) {
+        window.clearInterval(autoResetIntervalRef.current);
+      }
+    };
+  }, []);
+
   // Initialize welcome chat message with initial non-replicated suggestions
   useEffect(() => {
-    const now = new Date().toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
-    setMessages([
-      {
-        id: 'msg-welcome',
-        sender: 'assistant',
-        text: `Olá! Bem-vindo à **${business.name || 'Barbearia'}** ✂️\nSou o seu assistente inteligente de agendamento 24/7. Como posso ajudar você hoje?`,
-        time: now,
-        suggestions: [
-          '🗓️ Quero agendar um horário',
-          '✂️ Ver serviços e preços',
-          '⏰ Horários de hoje',
-          '💈 Nossos barbeiros',
-          '📍 Onde fica a barbearia?',
-        ],
-      },
-    ]);
-  }, [business.name]);
+    setMessages([createWelcomeChatMessage()]);
+  }, [createWelcomeChatMessage]);
 
   // Helper for reliable local date string (YYYY-MM-DD)
   const getFormattedDate = (daysAhead: number) => {
@@ -244,7 +264,7 @@ export const ClientAssistantView: React.FC<ClientAssistantViewProps> = ({
 
     try {
       const res = await api.getAvailableSlots(serviceId, date, barberId, business.id);
-      if (Array.isArray(res) && res.length > 0) {
+      if (Array.isArray(res)) {
         return res.filter((s: AvailableSlot) => {
           if (!s || !s.time) return false;
           if (isToday) {
@@ -258,30 +278,7 @@ export const ClientAssistantView: React.FC<ClientAssistantViewProps> = ({
       console.error('Erro ao buscar horários:', err);
     }
 
-    // Resilient fallback generator for today or tomorrow
-    const allTimes = [
-      '09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '12:00', '12:30',
-      '14:00', '14:30', '15:00', '15:30', '16:00', '16:30', '17:00', '17:30', '18:00', '18:30', '19:00', '19:30'
-    ];
-    const targetBarber = barberId && barberId !== 'any' ? activeBarbers.find((b) => b.id === barberId) : activeBarbers[0];
-    const srv = activeServices.find((s) => s.id === serviceId) || activeServices[0];
-
-    return allTimes
-      .filter((t) => {
-        if (isToday) {
-          const [h, m] = t.split(':').map(Number);
-          return h * 60 + m > currentMins;
-        }
-        return true;
-      })
-      .map((t) => ({
-        time: t,
-        available: true,
-        barberId: targetBarber?.id || 'barber_1',
-        barberName: targetBarber?.name || 'Profissional da Casa',
-        serviceId: srv?.id || serviceId,
-        serviceDuration: srv?.durationMinutes || 30,
-      }));
+    return [];
   };
 
   // Helper: Render bold text safely without dangerouslySetInnerHTML
@@ -342,24 +339,56 @@ export const ClientAssistantView: React.FC<ClientAssistantViewProps> = ({
     return filtered;
   };
 
+  // Helper: Full clean reset of the entire assistant screen for a brand new booking
+  const fullResetAssistantScreen = useCallback(() => {
+    if (autoResetIntervalRef.current) {
+      window.clearInterval(autoResetIntervalRef.current);
+      autoResetIntervalRef.current = null;
+    }
+    setAutoResetCountdown(null);
+
+    // Reset all form inputs and selections cleanly
+    setInputText('');
+    setSelectedService(null);
+    setSelectedBarber(null);
+    setSelectedBarberId(undefined);
+    setSelectedDate(new Date().toISOString().split('T')[0]);
+    setSelectedSlot(null);
+    setCustomerName('');
+    setCustomerPhone('');
+    setCustomerNotes('');
+    setBookingFormError(null);
+    setBookingErrorMessage(null);
+    setActivePaymentModal(null);
+    setCardNumber('');
+    setCardExpiry('');
+    setCardCvc('');
+    setCardHolder('');
+    setSelectedPaymentMethod('mbway');
+    setPhoneRiskState({ isRisk: false, forceAntiNoShow: false, cancellations: 0 });
+
+    // Clean reset of chat messages to the pristine initial welcome message
+    setMessages([createWelcomeChatMessage()]);
+
+    // Show clean reset feedback badge
+    setJustResetNotice(true);
+    setTimeout(() => {
+      setJustResetNotice(false);
+    }, 4000);
+
+    // Scroll chat to top smoothly
+    setTimeout(() => {
+      if (chatContainerRef.current) {
+        chatContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+      } else {
+        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }
+    }, 60);
+  }, [createWelcomeChatMessage]);
+
   // Helper: Restart chat back to welcome state
   const handleRestartChat = () => {
-    const now = new Date().toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
-    setMessages([
-      {
-        id: `msg-welcome-${Date.now()}`,
-        sender: 'assistant',
-        text: `Olá novamente! Sou o seu assistente de agendamento virtual na **${business.name || 'Barbearia'}** ✂️\nComo posso ajudar você agora?`,
-        time: now,
-        suggestions: [
-          '🗓️ Quero agendar um horário',
-          '✂️ Ver serviços e preços',
-          '⏰ Horários de hoje',
-          '💈 Nossos barbeiros',
-          '📍 Onde fica a barbearia?',
-        ],
-      },
-    ]);
+    fullResetAssistantScreen();
   };
 
   // Helper: Direct slot selection from assistant slot cards
@@ -409,6 +438,9 @@ export const ClientAssistantView: React.FC<ClientAssistantViewProps> = ({
     setIsSubmitting(true);
     const replyTime = new Date().toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
 
+    const todayStr = getFormattedDate(0);
+    const targetBookingDate = action.date || todayStr;
+
     try {
       const payload = {
         businessId: business.id,
@@ -416,7 +448,7 @@ export const ClientAssistantView: React.FC<ClientAssistantViewProps> = ({
         barberId: action.barberId || undefined,
         customerName: customerName.trim(),
         customerPhone: customerPhone.trim(),
-        date: action.date,
+        date: targetBookingDate,
         time: action.slotTime,
         notes: customerNotes.trim() || 'Agendado pelo Assistente Virtual',
         paymentMethod: selectedPaymentMethod,
@@ -478,6 +510,29 @@ export const ClientAssistantView: React.FC<ClientAssistantViewProps> = ({
       ]);
 
       setActivePaymentModal(null);
+      if (onBookingSuccess) {
+        onBookingSuccess();
+      }
+
+      // Automatically reset screen after confirmation to leave it clean for a new booking
+      const COUNTDOWN_SECONDS = 8;
+      setAutoResetCountdown(COUNTDOWN_SECONDS);
+      if (autoResetIntervalRef.current) {
+        window.clearInterval(autoResetIntervalRef.current);
+      }
+      autoResetIntervalRef.current = window.setInterval(() => {
+        setAutoResetCountdown((prev) => {
+          if (prev === null || prev <= 1) {
+            if (autoResetIntervalRef.current) {
+              window.clearInterval(autoResetIntervalRef.current);
+              autoResetIntervalRef.current = null;
+            }
+            fullResetAssistantScreen();
+            return null;
+          }
+          return prev - 1;
+        });
+      }, 1000);
     } catch (err: any) {
       setBookingErrorMessage(err?.message || 'Erro ao agendar.');
       setBookingFormError(err?.message || 'Erro ao agendar.');
@@ -605,7 +660,25 @@ export const ClientAssistantView: React.FC<ClientAssistantViewProps> = ({
 
     // Single barber or barber already selected: fetch slots directly
     const targetBarber = selectedBarberId ? activeBarbers.find((b) => b.id === selectedBarberId) : activeBarbers[0];
-    const slotsRes = await fetchAvailableSlotsList(srv.id, todayStr, targetBarber?.id);
+    const nowObj = new Date();
+    const isPastTodayHours = nowObj.getHours() * 60 + nowObj.getMinutes() >= (19 * 60 + 30);
+    const tomorrowStr = getFormattedDate(1);
+    const targetDate = isPastTodayHours ? tomorrowStr : todayStr;
+    const dateLabel = isPastTodayHours ? 'Amanhã' : 'Hoje';
+
+    let slotsRes = await fetchAvailableSlotsList(srv.id, targetDate, targetBarber?.id);
+    let effectiveDate = targetDate;
+    let effectiveLabel = dateLabel;
+
+    // If today had 0 slots left, automatically exclude today and switch to tomorrow
+    if (slotsRes.length === 0 && targetDate === todayStr) {
+      const tomorrowSlotsRes = await fetchAvailableSlotsList(srv.id, tomorrowStr, targetBarber?.id);
+      if (tomorrowSlotsRes.length > 0) {
+        slotsRes = tomorrowSlotsRes;
+        effectiveDate = tomorrowStr;
+        effectiveLabel = 'Amanhã';
+      }
+    }
 
     if (slotsRes.length > 0) {
       const slotOptions: AssistantSlotOption[] = slotsRes.map((s) => ({
@@ -615,30 +688,33 @@ export const ClientAssistantView: React.FC<ClientAssistantViewProps> = ({
         serviceName: srv.name,
         serviceId: srv.id,
         price: srv.price,
-        date: todayStr,
+        date: effectiveDate,
         status: 'Disponível',
       }));
+
+      const headerText = effectiveLabel === 'Amanhã' && isPastTodayHours
+        ? `Os horários de atendimento de hoje já encerraram. Encontrei **${slotOptions.length} horários para Amanhã** para **${srv.name}** (${priceFormatted}):\nToque no horário pretendido para reservar:`
+        : `Perfeito! Encontrei **${slotOptions.length} horários livres** para **${srv.name}** (${priceFormatted}) para **${effectiveLabel}**:\nToque no horário pretendido para reservar:`;
 
       setMessages((prev) => [
         ...prev,
         {
           id: `msg-rep-${Date.now()}`,
           sender: 'assistant',
-          text: `Perfeito! Encontrei **${slotOptions.length} horários livres** para **${srv.name}** (${priceFormatted}) para **Hoje**:\nToque no horário pretendido para reservar:`,
+          text: headerText,
           time: userTime,
           slotOptions,
           suggestions: filterNonReplicatedSuggestions(
             [
               `Quero às ${slotOptions[0]?.time}`,
               slotOptions[1] ? `Quero às ${slotOptions[1].time}` : '',
-              'Ver horários de amanhã',
+              effectiveLabel === 'Hoje' ? 'Ver horários de amanhã' : '',
             ].filter(Boolean),
             []
           ),
         },
       ]);
     } else {
-      const tomorrowStr = getFormattedDate(1);
       const tomorrowSlotsRes = await fetchAvailableSlotsList(srv.id, tomorrowStr, targetBarber?.id);
 
       if (tomorrowSlotsRes.length > 0) {
@@ -677,9 +753,9 @@ export const ClientAssistantView: React.FC<ClientAssistantViewProps> = ({
           {
             id: `msg-rep-${Date.now()}`,
             sender: 'assistant',
-            text: `Para hoje já não temos mais vagas livres para **${srv.name}**. Gostaria de consultar outros serviços ou falar diretamente connosco?`,
+            text: `Todos os horários para **${srv.name}** estão ocupados para os próximos dias. Gostaria de consultar outros serviços?`,
             time: userTime,
-            suggestions: ['Ver horários de amanhã', 'Ver outro serviço'],
+            suggestions: ['Ver outros serviços'],
           },
         ]);
       }
@@ -981,12 +1057,12 @@ export const ClientAssistantView: React.FC<ClientAssistantViewProps> = ({
           });
         }
 
-        // If user is specifically asking for tomorrow or availability and no service was specified, use selectedService or first service
-        if (!targetService && (norm.includes('amanha') || norm.includes('dia seguinte') || norm.includes('vaga') || norm.includes('horario'))) {
-          targetService = selectedService || activeServices[0];
+        // If no service was explicitly mentioned in the message, check if a service was previously selected
+        if (!targetService && selectedService) {
+          targetService = selectedService;
         }
 
-        // REQUIREMENT: If no specific service was selected yet (generic booking request), SHOW THE SERVICE TYPES FIRST!
+        // REQUIREMENT: If no specific service was selected or mentioned, SHOW THE SERVICE TYPES CARDS FIRST!
         if (!targetService) {
           const serviceList = activeServices.map((s) => ({
             id: s.id,
@@ -1001,7 +1077,7 @@ export const ClientAssistantView: React.FC<ClientAssistantViewProps> = ({
             {
               id: `msg-rep-${Date.now()}`,
               sender: 'assistant',
-              text: `💈 **Escolha o tipo de serviço:**\nSelecione abaixo o serviço que pretende agendar para vermos os horários livres:`,
+              text: `💈 **Escolha o tipo de serviço:**\nSelecione abaixo o serviço que pretende agendar para ver os horários livres:`,
               time: new Date().toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' }),
               serviceOptions: serviceList,
               suggestions: filterNonReplicatedSuggestions(
@@ -1014,9 +1090,12 @@ export const ClientAssistantView: React.FC<ClientAssistantViewProps> = ({
         }
 
         // If specific service is selected/determined, proceed to showing available time slots
-        // Detect date
-        let targetDate = todayStr;
-        let dateLabel = 'Hoje';
+        const nowObj = new Date();
+        const isPastTodayHours = nowObj.getHours() * 60 + nowObj.getMinutes() >= (19 * 60 + 30);
+
+        // Detect date (if today's hours have passed, automatically use tomorrow)
+        let targetDate = isPastTodayHours ? tomorrowStr : todayStr;
+        let dateLabel = isPastTodayHours ? 'Amanhã' : 'Hoje';
         if (norm.includes('amanha') || norm.includes('dia seguinte')) {
           targetDate = tomorrowStr;
           dateLabel = 'Amanhã';
@@ -1066,7 +1145,19 @@ export const ClientAssistantView: React.FC<ClientAssistantViewProps> = ({
         }
 
         // Fetch all available real slots from backend engine (already filtered against active appointments)
-        const slotsRes = await fetchAvailableSlotsList(targetService.id, targetDate, targetBarber?.id);
+        let slotsRes = await fetchAvailableSlotsList(targetService.id, targetDate, targetBarber?.id);
+        let effectiveDate = targetDate;
+        let effectiveLabel = dateLabel;
+
+        // If today has 0 slots left, automatically exclude today and switch to tomorrow
+        if (slotsRes.length === 0 && targetDate === todayStr) {
+          const tomorrowSlotsRes = await fetchAvailableSlotsList(targetService.id, tomorrowStr, targetBarber?.id);
+          if (tomorrowSlotsRes.length > 0) {
+            slotsRes = tomorrowSlotsRes;
+            effectiveDate = tomorrowStr;
+            effectiveLabel = 'Amanhã';
+          }
+        }
 
         if (slotsRes.length > 0) {
           const slotOptions: AssistantSlotOption[] = slotsRes.map((s) => ({
@@ -1076,23 +1167,27 @@ export const ClientAssistantView: React.FC<ClientAssistantViewProps> = ({
             serviceName: targetService.name,
             serviceId: targetService.id,
             price: targetService.price,
-            date: targetDate,
+            date: effectiveDate,
             status: 'Disponível',
           }));
+
+          const headerText = effectiveLabel === 'Amanhã' && isPastTodayHours
+            ? `Os horários de atendimento de hoje já encerraram. Encontrei **${slotOptions.length} horários para Amanhã** para **${targetService.name}** (${targetService.price}€):\nToque no horário pretendido para reservar:`
+            : `Perfeito! Encontrei **${slotOptions.length} horários livres** para **${targetService.name}** (${targetService.price}€) para **${effectiveLabel}**:\nToque no horário pretendido para reservar:`;
 
           setMessages((prev) => [
             ...prev,
             {
               id: `msg-rep-${Date.now()}`,
               sender: 'assistant',
-              text: `Perfeito! Encontrei **${slotOptions.length} horários livres** para **${targetService.name}** (${targetService.price}€) para **${dateLabel}**:\nToque no horário pretendido para reservar:`,
+              text: headerText,
               time: new Date().toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' }),
               slotOptions,
               suggestions: filterNonReplicatedSuggestions(
                 [
                   `Quero às ${slotOptions[0]?.time}`,
                   slotOptions[1] ? `Quero às ${slotOptions[1].time}` : '',
-                  'Ver horários de amanhã',
+                  effectiveLabel === 'Hoje' ? 'Ver horários de amanhã' : '',
                   'Ver outros serviços',
                 ].filter(Boolean),
                 updatedHistory
@@ -1267,7 +1362,17 @@ export const ClientAssistantView: React.FC<ClientAssistantViewProps> = ({
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-96 h-96 bg-[#c9a227]/[0.03] rounded-full blur-[120px] pointer-events-none" />
 
         {/* Chat Messages List (flex-1 scrollable) */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 no-scrollbar relative z-10">
+        <div
+          id="assistant-chat-container"
+          ref={chatContainerRef}
+          className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 no-scrollbar relative z-10"
+        >
+          {justResetNotice && (
+            <div className="mx-auto max-w-sm py-2 px-3.5 rounded-2xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-xs font-semibold flex items-center justify-center space-x-2 animate-fade-in shadow-lg">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>Tela reiniciada com sucesso! Pronto para nova marcação.</span>
+            </div>
+          )}
           {messages.map((m, mIdx) => {
             const isLatestMessageInChat = mIdx === messages.length - 1 && m.sender === 'assistant';
             return (
@@ -1616,14 +1721,54 @@ export const ClientAssistantView: React.FC<ClientAssistantViewProps> = ({
                           </div>
                         </div>
 
-                        <div className="flex justify-end pt-1">
+                        {/* Automatic Screen Reset Countdown Banner */}
+                        {autoResetCountdown !== null && (
+                          <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs space-y-2 animate-fade-in">
+                            <div className="flex items-center justify-between text-amber-300 font-semibold">
+                              <div className="flex items-center space-x-1.5">
+                                <RotateCcw className="w-3.5 h-3.5 animate-spin" style={{ animationDuration: '4s' }} />
+                                <span>A reiniciar tela para nova marcação em <strong>{autoResetCountdown}s</strong>...</span>
+                              </div>
+                              <span className="text-[10px] font-mono font-bold bg-amber-500/20 text-amber-200 px-2 py-0.5 rounded-full border border-amber-500/40">
+                                {autoResetCountdown}s
+                              </span>
+                            </div>
+
+                            {/* Animated progress bar */}
+                            <div className="w-full h-1.5 bg-black/40 rounded-full overflow-hidden border border-white/5">
+                              <div
+                                className="h-full bg-gradient-to-r from-[#c9a227] via-amber-400 to-emerald-400 transition-all duration-1000 ease-linear rounded-full"
+                                style={{ width: `${(autoResetCountdown / 8) * 100}%` }}
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="flex items-center justify-between pt-1 gap-2">
+                          {autoResetCountdown !== null && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (autoResetIntervalRef.current) {
+                                  window.clearInterval(autoResetIntervalRef.current);
+                                  autoResetIntervalRef.current = null;
+                                }
+                                setAutoResetCountdown(null);
+                              }}
+                              className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white text-[11px] font-medium transition cursor-pointer"
+                              title="Pausar contagem para continuar a ler o comprovativo"
+                            >
+                              <span>Pausar</span>
+                            </button>
+                          )}
+
                           <button
                             type="button"
-                            onClick={() => handleSendChatMessage('Quero fazer outra marcação')}
-                            className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white font-bold text-xs flex items-center space-x-1.5 transition cursor-pointer"
+                            onClick={fullResetAssistantScreen}
+                            className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#e5b83b] via-[#c9a227] to-[#a1821f] hover:brightness-110 text-slate-950 font-bold text-xs flex items-center space-x-1.5 transition cursor-pointer ml-auto shadow-md active:scale-95"
                           >
                             <RotateCcw className="w-3.5 h-3.5" />
-                            <span>Nova Marcação</span>
+                            <span>Nova Marcação (Limpar Tela)</span>
                           </button>
                         </div>
                       </div>

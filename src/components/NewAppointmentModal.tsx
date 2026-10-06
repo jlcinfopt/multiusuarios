@@ -66,9 +66,20 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   const [selectedBarberId, setSelectedBarberId] = useState<string>(
     defaultBarberId || uniqueBarbers[0]?.id || ''
   );
-  const [date, setDate] = useState<string>(
-    defaultDate || new Date().toISOString().split('T')[0]
-  );
+  const now = new Date();
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+  const isPastTodayHours = currentMinutes >= (19 * 60 + 30);
+
+  const todayStr = new Date().toISOString().split('T')[0];
+  const tomorrowObj = new Date();
+  tomorrowObj.setDate(tomorrowObj.getDate() + 1);
+  const tomorrowStr = tomorrowObj.toISOString().split('T')[0];
+  const earliestValidDate = isPastTodayHours ? tomorrowStr : todayStr;
+
+  const [date, setDate] = useState<string>(() => {
+    if (defaultDate && defaultDate >= earliestValidDate) return defaultDate;
+    return earliestValidDate;
+  });
   const [time, setTime] = useState<string>(defaultTime || '10:00');
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
@@ -85,7 +96,8 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   // Sync state when modal opens or defaults change
   useEffect(() => {
     if (isOpen) {
-      if (defaultDate) setDate(defaultDate);
+      const validInitialDate = defaultDate && defaultDate >= earliestValidDate ? defaultDate : earliestValidDate;
+      setDate(validInitialDate);
       if (defaultTime) setTime(defaultTime);
       if (defaultBarberId) setSelectedBarberId(defaultBarberId);
       else if (uniqueBarbers[0]?.id) setSelectedBarberId(uniqueBarbers[0].id);
@@ -94,7 +106,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       setPaymentMethod(isBrazil ? 'pix' : 'mbway');
       setErrorMessage('');
     }
-  }, [isOpen, defaultDate, defaultTime, defaultBarberId, defaultServiceId, uniqueBarbers, uniqueServices, isBrazil]);
+  }, [isOpen, defaultDate, defaultTime, defaultBarberId, defaultServiceId, uniqueBarbers, uniqueServices, isBrazil, earliestValidDate]);
 
   useEffect(() => {
     if (selectedServiceId && date && selectedBarberId) {
@@ -235,7 +247,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
               <label className="block text-slate-300 font-bold mb-1">Data *</label>
               <input
                 type="date"
-                min={new Date().toISOString().split('T')[0]}
+                min={earliestValidDate}
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-800 text-white p-2.5 rounded-xl"

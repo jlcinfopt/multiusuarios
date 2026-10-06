@@ -247,6 +247,14 @@ export default function App() {
 
   useEffect(() => {
     loadAllData();
+
+    const handleDataUpdate = () => {
+      loadAllData();
+    };
+    window.addEventListener('barberflow_appointments_updated', handleDataUpdate);
+    return () => {
+      window.removeEventListener('barberflow_appointments_updated', handleDataUpdate);
+    };
   }, [loadAllData]);
 
   // Listen for hash and browser navigation changes

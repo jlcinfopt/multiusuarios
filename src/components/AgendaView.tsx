@@ -71,6 +71,17 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
   const todayStr = new Date().toISOString().split('T')[0];
   const isToday = selectedDate === todayStr;
 
+  const now = new Date();
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+  const isPastTodayHours = currentMinutes >= (19 * 60 + 30);
+
+  const tomorrowObj = new Date();
+  tomorrowObj.setDate(tomorrowObj.getDate() + 1);
+  const tomorrowStr = `${tomorrowObj.getFullYear()}-${String(tomorrowObj.getMonth() + 1).padStart(2, '0')}-${String(tomorrowObj.getDate()).padStart(2, '0')}`;
+
+  const isSelectedDateExpired = selectedDate < todayStr || (selectedDate === todayStr && isPastTodayHours);
+  const nextAvailableBookingDate = isSelectedDateExpired ? tomorrowStr : selectedDate;
+
   // Format date display (e.g. "Quarta-feira, 16 de Setembro")
   const formatDateDisplay = (dateStr: string) => {
     const [y, m, d] = dateStr.split('-').map(Number);
@@ -351,7 +362,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
 
             {/* Main Action: New Appointment */}
             <button
-              onClick={() => onOpenNewAppointment({ date: selectedDate })}
+              onClick={() => onOpenNewAppointment({ date: nextAvailableBookingDate })}
               className="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 text-xs font-black px-4 py-2.5 rounded-xl transition-all flex items-center space-x-2 shadow-lg shadow-amber-950/40 cursor-pointer"
             >
               <Plus className="w-4 h-4" />
@@ -359,6 +370,26 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Expired date alert & next available day shortcut */}
+        {isSelectedDateExpired && (
+          <div className="mt-4 p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+            <div className="flex items-center space-x-2.5 text-amber-200">
+              <Clock className="w-4 h-4 text-amber-400 shrink-0" />
+              <span>
+                {selectedDate < todayStr
+                  ? 'Esta data já pertence ao passado.'
+                  : 'Os horários de atendimento de hoje já encerraram.'} O próximo dia disponível para marcações é <strong className="text-amber-300">Amanhã ({tomorrowStr})</strong>.
+              </span>
+            </div>
+            <button
+              onClick={() => onChangeDate(tomorrowStr)}
+              className="px-3 py-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black rounded-xl text-[11px] shrink-0 transition-all cursor-pointer shadow-sm"
+            >
+              Avançar para Amanhã →
+            </button>
+          </div>
+        )}
 
         {/* Quick Week Strip Navigation */}
         <div className="grid grid-cols-7 gap-1 sm:gap-2 pt-4 mt-4 border-t border-white/[0.06] w-full">
@@ -872,10 +903,10 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
               <Scissors className="w-8 h-8 text-slate-500 mx-auto mb-2" />
               <p className="text-xs font-bold text-white">Nenhuma marcação encontrada nesta data.</p>
               <button
-                onClick={() => onOpenNewAppointment({ date: selectedDate })}
-                className="mt-3 text-xs bg-amber-500 text-slate-950 font-bold px-4 py-2 rounded-xl cursor-pointer"
+                onClick={() => onOpenNewAppointment({ date: nextAvailableBookingDate })}
+                className="mt-3 text-xs bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-4 py-2 rounded-xl cursor-pointer transition-all"
               >
-                + Criar Marcação para {selectedDate}
+                + Criar Marcação para {nextAvailableBookingDate}
               </button>
             </div>
           ) : (

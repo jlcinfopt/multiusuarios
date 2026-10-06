@@ -422,9 +422,11 @@ export class BookingEngine {
       // Re-verify availability: check direct appointment collision for this barber
       const slotMins = timeToMinutes(time);
       const slotEndMins = slotMins + (service.durationMinutes || 30);
+      const activeBarbersCount = Array.from(db.barbers.values()).filter((b) => b.businessId === businessId && b.active).length;
       const hasConflict = Array.from(db.appointments.values()).some((apt) => {
         if (apt.businessId !== businessId || apt.date !== date || apt.status === 'cancelada') return false;
-        if (apt.barberId && apt.barberId !== barber.id) return false;
+        const sameBarber = activeBarbersCount <= 1 || !apt.barberId || !barber?.id || apt.barberId === barber.id;
+        if (!sameBarber) return false;
         const aptStart = timeToMinutes(apt.time);
         const aptEnd = aptStart + (apt.durationMinutes || 30);
         return slotMins < aptEnd && slotEndMins > aptStart;
